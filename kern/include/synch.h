@@ -76,8 +76,8 @@ struct lock {
         char *lk_name;
 		struct wchan *lk_wchan;
 		struct spinlock lk_slk;
-		struct thread *lk_thread;
-		bool lk_hold;
+		volatile struct thread *lk_thread;
+		volatile bool lk_hold;
         HANGMAN_LOCKABLE(lk_hangman);   /* Deadlock detector hook. */
         // add what you need here
         // (don't forget to mark things volatile as needed)
