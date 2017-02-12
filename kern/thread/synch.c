@@ -174,6 +174,9 @@ void
 lock_destroy(struct lock *lock)
 {
 	KASSERT(lock != NULL);
+	if (lock->lk_hold) {
+		lock_release(lock);
+	}
 
 	// add stuff here as needed
 	// if(!wchan_isempty(lock->lk_wchan, &lock->lk_slk)){
@@ -181,18 +184,18 @@ lock_destroy(struct lock *lock)
 	// 	wchan_wakeall(lock->lk_wchan,&lock->lk_slk);
 	// 	spinlock_release(&lock->lk_slk);
 	// }
-	spinlock_acquire(&lock->lk_slk);
-	if(lock_do_i_hold(lock)){
-		lock_release(lock);
-	}else if(lock->lk_thread != NULL){
-		lock_acquire(lock);
-		lock_release(lock);
-	}
-	spinlock_release(&lock->lk_slk);
+	//spinlock_acquire(&lock->lk_slk);
+	//if(lock_do_i_hold(lock)){
+	//	lock_release(lock);
+	//}else if(lock->lk_thread != NULL){
+	//	lock_acquire(lock);
+	//	lock_release(lock);
+	//}
+	//spinlock_release(&lock->lk_slk);
 	spinlock_cleanup(&lock->lk_slk);
 	wchan_destroy(lock->lk_wchan);
 	kfree(lock->lk_name);
-	lock->lk_thread = NULL;
+	//lock->lk_thread = NULL;
 	kfree(lock);
 }
 
@@ -206,21 +209,22 @@ lock_acquire(struct lock *lock)
 	KASSERT(lock != NULL);
 	KASSERT(curthread->t_in_interrupt == false);
 
-	HANGMAN_WAIT(&curthread->t_hangman, &lock->lk_hangman);
+	//HANGMAN_WAIT(&curthread->t_hangman, &lock->lk_hangman);
 
 	spinlock_acquire(&lock->lk_slk);
+	HANGMAN_WAIT(&curthread->t_hangman, &lock->lk_hangman);
 
-
-	while(lock->lk_hold){
+	while(lock->lk_hold && !lock_do_i_hold(lock)){
 		wchan_sleep(lock->lk_wchan, &lock->lk_slk);
 	}
-		KASSERT(!lock->lk_hold);
-		lock->lk_hold = true;
-		lock->lk_thread = curthread;
+	KASSERT(!lock->lk_hold);
+	lock->lk_hold = true;
+	lock->lk_thread = curthread;
+	HANGMAN_ACQUIRE(&curthread->t_hangman, &lock->lk_hangman);
 
 	spinlock_release(&lock->lk_slk);
 	/* Call this (atomically) once the lock is acquired */
-	HANGMAN_ACQUIRE(&curthread->t_hangman, &lock->lk_hangman);
+	//HANGMAN_ACQUIRE(&curthread->t_hangman, &lock->lk_hangman);
 }
 
 void
