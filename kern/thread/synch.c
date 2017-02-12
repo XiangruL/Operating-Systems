@@ -181,6 +181,7 @@ lock_destroy(struct lock *lock)
 	// 	wchan_wakeall(lock->lk_wchan,&lock->lk_slk);
 	// 	spinlock_release(&lock->lk_slk);
 	// }
+
 	spinlock_acquire(&lock->lk_slk);
 	if(lock_do_i_hold(lock)){
 		lock_release(lock);
@@ -189,6 +190,7 @@ lock_destroy(struct lock *lock)
 		lock_release(lock);
 	}
 	spinlock_release(&lock->lk_slk);
+
 	spinlock_cleanup(&lock->lk_slk);
 	wchan_destroy(lock->lk_wchan);
 	kfree(lock->lk_name);
@@ -229,7 +231,7 @@ lock_release(struct lock *lock)
 	/* Call this (atomically) when the lock is released */
 
 	// Write this
-	KASSERT(lock != NULL);
+	KASSERT(lock != NULL && lock_do_i_hold(lock));
 	spinlock_acquire(&lock->lk_slk);
 
 	if(lock_do_i_hold(lock)){
