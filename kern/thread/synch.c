@@ -433,7 +433,7 @@ rwlock_release_read(struct rwlock *rwlock){
 	KASSERT(rwlock != NULL);
 	// KASSERT(lock_do_i_hold(rwlock->rwlock_lk));
 	// KASSERT(rwlock->rwlock_cv != NULL);
-
+	KASSERT(rwlock->rwlock_read_count > 0);
 	spinlock_acquire(&rwlock->rwlock_slk);
 	rwlock->rwlock_read_count--;
 	spinlock_release(&rwlock->rwlock_slk);
