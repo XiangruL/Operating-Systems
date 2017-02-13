@@ -145,6 +145,14 @@ void cv_wait(struct cv *cv, struct lock *lock);
 void cv_signal(struct cv *cv, struct lock *lock);
 void cv_broadcast(struct cv *cv, struct lock *lock);
 
+
+
+
+/*
+* Thread List Struct
+*/
+
+
 /*
  * Reader-writer locks.
  *
@@ -157,12 +165,15 @@ void cv_broadcast(struct cv *cv, struct lock *lock);
 
 struct rwlock {
         char *rwlock_name;
-        volatile int rwlock_read_count;
+        // volatile unsigned rwlock_read_count;
 		volatile bool rwlock_read_hold;
-		volatile int rwlock_write_preenter_count;
+		volatile bool rwlock_write_wait;
+		// volatile unsigned rwlock_write_preenter_count;
 		volatile bool rwlock_write_hold;
-		struct spinlock rwlock_slk;
-		struct wchan *rwlock_wchan;
+		struct cv *rwlock_cv;
+		struct lock *rwlock_lk;
+		// struct spinlock rwlock_slk;
+		// struct wchan *rwlock_wchan;
 
 		// add what you need here
         // (don't forget to mark things volatile as needed)
