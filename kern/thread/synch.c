@@ -344,3 +344,63 @@ cv_broadcast(struct cv *cv, struct lock *lock)
 	// (void)cv;    // suppress warning until code gets written
 	// (void)lock;  // suppress warning until code gets written
 }
+
+////////////////////////////////////////////////////////////
+//
+// RW
+struct
+rwlock * rwlock_create(const char * name){
+	struct rwlock *rwlock;
+	rwlock = kmalloc(sizeof(*rwlock));
+	if (rwlock == NULL) {
+		return NULL;
+	}
+
+	rwlock->rwlock_name = kstrdup(name);
+	if (rwlock->rwlock_name==NULL) {
+		kfree(rwlock);
+		return NULL;
+	}
+	return rwlock;
+}
+
+void
+rwlock_destroy(struct rwlock *rwlock){
+	(void)rwlock;
+}
+
+void
+rwlock_acquire_read(struct rwlock *rwlock){
+		KASSERT(rwlock != NULL );
+		spinlock_acquire(&rwlock->rwlock_slk);
+		while(rwlock->rwlock_write_hold || rwlock->rwlock_write_preenter_count > 0){
+			wchan_sleep(rwlock->rwlock_wchan, &rwlock->rwlock_slk);
+		}
+		KASSERT(!rwlock->rwlock_write_hold && rwlock->rwlock_write_preenter_count == 0);
+		rwlock->rwlock_read_count++;
+
+		rwlock->rwlock_read_hold = true;
+
+		spinlock_release(&rwlock->rwlock_slk);
+}
+
+void
+rwlock_release_read(struct rwlock *rwlock){
+	(void)rwlock;
+}
+
+void
+rwlock_acquire_write(struct rwlock *rwlock){
+	KASSERT(rwlock != NULL);
+	spinlock_acquire(&rwlock->rwlock_slk);
+	rwlock->rwlock_write_preenter_count++;
+	while(rwlock->rwlock_read_hold || rwlock->rwlock_write_hold){
+		wchan_sleep(rwlock->rwlock_wchan, &rwlock->rwlock_slk);
+	}
+	KASSERT(!rwlock->rwlock_read_hold);
+	KASSERT(rwlock->rwlock_write_preenter_count > 0);
+	rwlock->rwlock_write_preenter_count--;
+	rwlock->rwlock_write_hold = true;
+
+	spinlock_release(&rwlock->rwlock_slk);
+}
