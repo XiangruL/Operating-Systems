@@ -440,20 +440,23 @@ rwlock_release_read(struct rwlock *rwlock){
 	spinlock_acquire(&rwlock->rwlock_slk);
 
 
-	// rwlock->rwlock_read_count--;
-	rwlock->rwlock_read_hold = false;
-	rwlock->rwlock_read_count = 0;
-	rwlock->rwlock_lk->lk_thread = curthread;
-	spinlock_release(&rwlock->rwlock_slk);
-	lock_release(rwlock->rwlock_lk);
+	//
+	// rwlock->rwlock_read_hold = false;
+	// rwlock->rwlock_read_count = 0;
+	// rwlock->rwlock_lk->lk_thread = curthread;
+	// spinlock_release(&rwlock->rwlock_slk);
+	// lock_release(rwlock->rwlock_lk);
 
-	// if(rwlock->rwlock_read_count == 0){
-	// 	rwlock->rwlock_read_hold = false;
-	// 	// cv_signal(rwlock->rwlock_cv, rwlock->rwlock_lk);
-	// 	rwlock->rwlock_lk->lk_thread = curthread;
-	// 	lock_release(rwlock->rwlock_lk);
-	////
-	// }
+	rwlock->rwlock_read_count--;
+	if(rwlock->rwlock_read_count == 0){
+		rwlock->rwlock_read_hold = false;
+		// cv_signal(rwlock->rwlock_cv, rwlock->rwlock_lk);
+		rwlock->rwlock_lk->lk_thread = curthread;
+		spinlock_release(&rwlock->rwlock_slk);
+		lock_release(rwlock->rwlock_lk);
+	}else{
+		spinlock_release(&rwlock->rwlock_slk);
+	}
 
 
 }
