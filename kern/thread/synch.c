@@ -419,11 +419,14 @@ rwlock_acquire_read(struct rwlock *rwlock){
 		// lock_release(rwlock->rwlock_lk);
 		rwlock->rwlock_read_count++;
 		rwlock->rwlock_read_hold = true;
-		spinlock_release(&rwlock->rwlock_slk);
 
+		KASSERT(rwlock->rwlock_lk != NULL);
 		if(rwlock->rwlock_read_count == 1){
+			spinlock_release(&rwlock->rwlock_slk);
 			lock_acquire(rwlock->rwlock_lk);
 
+		}else{
+			spinlock_release(&rwlock->rwlock_slk);
 		}
 
 }
@@ -435,16 +438,23 @@ rwlock_release_read(struct rwlock *rwlock){
 	// KASSERT(rwlock->rwlock_cv != NULL);
 	KASSERT(rwlock->rwlock_read_count > 0);
 	spinlock_acquire(&rwlock->rwlock_slk);
-	rwlock->rwlock_read_count--;
+
+
+	// rwlock->rwlock_read_count--;
+	rwlock->rwlock_read_hold = false;
+	rwlock->rwlock_read_count = 0;
+	rwlock->rwlock_lk->lk_thread = curthread;
 	spinlock_release(&rwlock->rwlock_slk);
+	lock_release(rwlock->rwlock_lk);
 
-	if(rwlock->rwlock_read_count == 0){
-		rwlock->rwlock_read_hold = false;
-		// cv_signal(rwlock->rwlock_cv, rwlock->rwlock_lk);
-		rwlock->rwlock_lk->lk_thread = curthread;
-		lock_release(rwlock->rwlock_lk);
+	// if(rwlock->rwlock_read_count == 0){
+	// 	rwlock->rwlock_read_hold = false;
+	// 	// cv_signal(rwlock->rwlock_cv, rwlock->rwlock_lk);
+	// 	rwlock->rwlock_lk->lk_thread = curthread;
+	// 	lock_release(rwlock->rwlock_lk);
+	//
+	// }
 
-	}
 
 }
 
@@ -461,12 +471,14 @@ rwlock_acquire_write(struct rwlock *rwlock){
 		// cv_wait(rwlock->rwlock_cv, rwlock->rwlock_lk);
 	}
 	KASSERT(!rwlock->rwlock_read_hold && !rwlock->rwlock_write_hold);
+	KASSERT(rwlock->rwlock_lk != NULL);
 	// KASSERT(rwlock->rwlock_write_preenter_count > 0);
 	// rwlock->rwlock_write_preenter_count--;
-	spinlock_release(&rwlock->rwlock_slk);
-	lock_acquire(rwlock->rwlock_lk);
 	rwlock->rwlock_write_hold = true;
 	rwlock->rwlock_write_wait = false;
+	spinlock_release(&rwlock->rwlock_slk);
+	lock_acquire(rwlock->rwlock_lk);
+
 
 }
 
