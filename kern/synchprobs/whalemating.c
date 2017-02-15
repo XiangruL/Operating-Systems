@@ -94,12 +94,12 @@ male(uint32_t index)
 	V(sem_mating);
 	// mating_count++;
 	KASSERT(sem_mating->sem_count <= 3);
+	KASSERT(sem_mating->sem_count != 0);
 	if(sem_mating->sem_count < 3){
 	cv_wait(cv_mating, lock_sem);
 	}
-
+	P(sem_mating);
 	if(sem_mating->sem_count > 0){
-		P(sem_mating);
 		cv_signal(cv_mating, lock_sem);
 	}
 
@@ -126,12 +126,12 @@ female(uint32_t index)
 	V(sem_mating);
 	// mating_count++;
 	KASSERT(sem_mating->sem_count <= 3);
+	KASSERT(sem_mating->sem_count != 0);
 	if(sem_mating->sem_count < 3){
 	cv_wait(cv_mating, lock_sem);
 	}
-
-	if(sem_mating->sem_count > 0){
-		P(sem_mating);
+	P(sem_mating);
+	if(sem_mating->sem_count > 1){
 		cv_signal(cv_mating, lock_sem);
 	}
 
@@ -157,12 +157,12 @@ matchmaker(uint32_t index)
 	V(sem_mating);
 	// mating_count++;
 	KASSERT(sem_mating->sem_count <= 3);
+	KASSERT(sem_mating->sem_count != 0);
 	if(sem_mating->sem_count < 3){
 	cv_wait(cv_mating, lock_sem);
 	}
-
+	P(sem_mating);
 	if(sem_mating->sem_count > 0){
-		P(sem_mating);
 		cv_signal(cv_mating, lock_sem);
 	}
 
