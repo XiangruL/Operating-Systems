@@ -72,9 +72,35 @@
 /*
  * Called by the driver during initialization.
  */
+#ifndef NUM_QUADRANTS
+#define NUM_QUADRANTS 4
+#endif
+#ifndef GO_STRAIGHT
+#define GO_STRAIGHT 0
+#endif
+#ifndef TURN_LEFT
+#define TURN_LEFT 1
+#endif
+#ifndef TURN_RIGHT
+#define TURN_RIGHT 2
+#endif
+#ifndef NUM_LOCKS_IN_STOPLIGHT
+#define NUM_LOCKS_IN_STOPLIGHT 3
+#endif
 
+
+static struct semaphore * sem[NUM_QUADRANTS];
+static struct lock * lock_sem[NUM_LOCKS_IN_STOPLIGHT];
 void
 stoplight_init() {
+	for(int i=0; i<NUM_QUADRANTS; i++){
+		sem[i] = sem_create("sem_stoplight",1);
+	}
+
+	for(int i=0; i<NUM_LOCKS_IN_STOPLIGHT; i++){
+		lock_sem[i] = lock_create("lock_stoplight");
+	}
+
 	return;
 }
 
@@ -83,6 +109,12 @@ stoplight_init() {
  */
 
 void stoplight_cleanup() {
+	for(int i=0; i<NUM_QUADRANTS; i++){
+		sem_destroy(sem[i]);
+	}
+	for(int i=0; i<NUM_LOCKS_IN_STOPLIGHT; i++){
+		lock_destroy(lock_sem[i]);
+	}
 	return;
 }
 
@@ -91,6 +123,13 @@ turnright(uint32_t direction, uint32_t index)
 {
 	(void)direction;
 	(void)index;
+	lock_acquire(lock_sem[TURN_RIGHT]);
+	P(sem[direction]);
+	inQuadrant(direction, index);
+	leaveIntersection(index);
+	V(sem[direction]);
+	lock_release(lock_sem[TURN_RIGHT]);
+
 	/*
 	 * Implement this function.
 	 */
@@ -101,6 +140,18 @@ gostraight(uint32_t direction, uint32_t index)
 {
 	(void)direction;
 	(void)index;
+	lock_acquire(lock_sem[GO_STRAIGHT]);
+	P(sem[direction]);
+	inQuadrant(direction, index);
+	P(sem[(direction - 1) % NUM_QUADRANTS]);
+	inQuadrant((direction - 1) % NUM_QUADRANTS, index);
+	// lock_release(lock_sem);
+	//
+	// lock_acquire(lock_sem);
+	V(sem[direction]);
+	leaveIntersection(index);
+	V(sem[(direction - 1) % NUM_QUADRANTS]);
+	lock_release(lock_sem[GO_STRAIGHT]);
 	/*
 	 * Implement this function.
 	 */
@@ -111,6 +162,24 @@ turnleft(uint32_t direction, uint32_t index)
 {
 	(void)direction;
 	(void)index;
+	lock_acquire(lock_sem[TURN_LEFT]);
+	P(sem[direction]);
+	inQuadrant(direction, index);
+	P(sem[(direction - 1) % NUM_QUADRANTS]);
+	inQuadrant((direction - 1) % NUM_QUADRANTS, index);
+	// lock_release(lock_sem);
+	//
+	// lock_acquire(lock_sem);
+	V(sem[direction]);
+	P(sem[(direction - 2) % NUM_QUADRANTS]);
+	inQuadrant((direction - 2) % NUM_QUADRANTS, index);
+	// lock_release(lock_sem);
+	//
+	// lock_acquire(lock_sem);
+	V(sem[(direction - 1) % NUM_QUADRANTS]);
+	leaveIntersection(index);
+	V(sem[(direction - 2) % NUM_QUADRANTS]);
+	lock_release(lock_sem[TURN_LEFT]);
 	/*
 	 * Implement this function.
 	 */
