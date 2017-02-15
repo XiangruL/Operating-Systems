@@ -492,6 +492,7 @@ rwlock_release_write(struct rwlock *rwlock){
 	// KASSERT(rwlock->rwlock_cv != NULL);
 	spinlock_acquire(&rwlock->rwlock_slk);
 	rwlock->rwlock_write_hold = false;
+	rwlock->rwlock_write_wait = false;
 	// cv_signal(rwlock->rwlock_cv, rwlock->rwlock_lk);
 	wchan_wakeone(rwlock->rwlock_wchan, &rwlock->rwlock_slk);
 	spinlock_release(&rwlock->rwlock_slk);
