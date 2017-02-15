@@ -166,6 +166,7 @@ void cv_broadcast(struct cv *cv, struct lock *lock);
 struct rwlock {
         char *rwlock_name;
         volatile unsigned rwlock_read_count;
+		volatile unsigned rwlock_writewaiting_count;
 		volatile bool rwlock_read_hold;
 		volatile bool rwlock_write_wait;
 		// volatile unsigned rwlock_write_preenter_count;
