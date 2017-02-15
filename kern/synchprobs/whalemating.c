@@ -40,7 +40,7 @@
 #include <test.h>
 #include <synch.h>
 
-static struct semaphore *sem_mating;
+// static struct semaphore *sem_mating;
 static struct lock *lock_male;
 static struct lock *lock_female;
 static struct lock *lock_mm;
@@ -48,13 +48,13 @@ static struct lock *lock_mm;
 // static struct cv *cv_female;
 static struct cv *cv_mating;
 static struct lock *lock_sem;
-// static volatile unsigned mating_count;
+static volatile unsigned mating_count;
 /*
  * Called by the driver during initialization.
  */
 
 void whalemating_init() {
-	sem_mating = sem_create("sem_mating",0);
+	// sem_mating = sem_create("sem_mating",0);
 	lock_male = lock_create("lock_male");
 	lock_female = lock_create("lock_female");
 	lock_mm = lock_create("lock_mm");
@@ -62,7 +62,7 @@ void whalemating_init() {
 	// cv_female = cv_create("cv_female");
 	cv_mating = cv_create("cv_mating");
 	lock_sem = lock_create("lock_sem");
-	// mating_count = 0;
+	mating_count = 0;
 	return;
 }
 
@@ -72,7 +72,7 @@ void whalemating_init() {
 
 void
 whalemating_cleanup() {
-	sem_destroy(sem_mating);
+	// sem_destroy(sem_mating);
 	lock_destroy(lock_male);
 	lock_destroy(lock_female);
 	lock_destroy(lock_mm);
@@ -91,15 +91,15 @@ male(uint32_t index)
 
 	lock_acquire(lock_male);
 	lock_acquire(lock_sem);
-	V(sem_mating);
-	// mating_count++;
-	KASSERT(sem_mating->sem_count <= 3);
-	KASSERT(sem_mating->sem_count != 0);
-	if(sem_mating->sem_count < 3){
+	// V(sem_mating);
+	mating_count++;
+	KASSERT(mating_count <= 3);
+	KASSERT(mating_count != 0);
+	if(mating_count < 3){
 	cv_wait(cv_mating, lock_sem);
 	}
-	P(sem_mating);
-	if(sem_mating->sem_count > 0){
+	mating_count--;
+	if(mating_count > 0){
 		cv_signal(cv_mating, lock_sem);
 	}
 
@@ -123,15 +123,15 @@ female(uint32_t index)
 
 	lock_acquire(lock_female);
 	lock_acquire(lock_sem);
-	V(sem_mating);
-	// mating_count++;
-	KASSERT(sem_mating->sem_count <= 3);
-	KASSERT(sem_mating->sem_count != 0);
-	if(sem_mating->sem_count < 3){
+	// V(sem_mating);
+	mating_count++;
+	KASSERT(mating_count <= 3);
+	KASSERT(mating_count != 0);
+	if(mating_count < 3){
 	cv_wait(cv_mating, lock_sem);
 	}
-	P(sem_mating);
-	if(sem_mating->sem_count > 1){
+	mating_count--;
+	if(mating_count > 0){
 		cv_signal(cv_mating, lock_sem);
 	}
 
@@ -154,15 +154,15 @@ matchmaker(uint32_t index)
 
 	lock_acquire(lock_mm);
 	lock_acquire(lock_sem);
-	V(sem_mating);
-	// mating_count++;
-	KASSERT(sem_mating->sem_count <= 3);
-	KASSERT(sem_mating->sem_count != 0);
-	if(sem_mating->sem_count < 3){
+	// V(sem_mating);
+	mating_count++;
+	KASSERT(mating_count <= 3);
+	KASSERT(mating_count != 0);
+	if(mating_count < 3){
 	cv_wait(cv_mating, lock_sem);
 	}
-	P(sem_mating);
-	if(sem_mating->sem_count > 0){
+	mating_count--;
+	if(mating_count > 0){
 		cv_signal(cv_mating, lock_sem);
 	}
 
