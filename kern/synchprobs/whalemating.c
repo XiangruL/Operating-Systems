@@ -40,29 +40,27 @@
 #include <test.h>
 #include <synch.h>
 
-// static struct semaphore *sem_mating;
-static struct lock *lock_male;
-static struct lock *lock_female;
-static struct lock *lock_mm;
-// static struct cv *cv_male;
-// static struct cv *cv_female;
-static struct cv *cv_mating;
-static struct lock *lock_sem;
-static volatile unsigned mating_count;
+static struct semaphore *sem_male;
+static struct semaphore *sem_female;
+// static struct lock *lock_male;
+// static struct lock *lock_female;
+// static struct lock *lock_mm;
+// static struct cv *cv_mating;
+// static struct lock *lock_sem;
+// static volatile unsigned mating_count;
 /*
  * Called by the driver during initialization.
  */
 
 void whalemating_init() {
-	// sem_mating = sem_create("sem_mating",0);
-	lock_male = lock_create("lock_male");
-	lock_female = lock_create("lock_female");
-	lock_mm = lock_create("lock_mm");
-	// cv_male = cv_create("cv_male");
-	// cv_female = cv_create("cv_female");
-	cv_mating = cv_create("cv_mating");
-	lock_sem = lock_create("lock_sem");
-	mating_count = 0;
+	// lock_male = lock_create("lock_male");
+	// lock_female = lock_create("lock_female");
+	// lock_mm = lock_create("lock_mm");
+	// cv_mating = cv_create("cv_mating");
+	// lock_sem = lock_create("lock_sem");
+	// mating_count = 0;
+	sem_male = sem_create("male", 0);
+	sem_female = sem_create("female", 0);
 	return;
 }
 
@@ -72,14 +70,13 @@ void whalemating_init() {
 
 void
 whalemating_cleanup() {
-	// sem_destroy(sem_mating);
-	lock_destroy(lock_male);
-	lock_destroy(lock_female);
-	lock_destroy(lock_mm);
-	// cv_destroy(cv_male);
-	// cv_destroy(cv_female);
-	cv_destroy(cv_mating);
-	lock_destroy(lock_sem);
+	// lock_destroy(lock_male);
+	// lock_destroy(lock_female);
+	// lock_destroy(lock_mm);
+	// cv_destroy(cv_mating);
+	// lock_destroy(lock_sem);
+	sem_destroy(sem_male);
+	sem_destroy(sem_female);
 	return;
 }
 
@@ -88,23 +85,23 @@ male(uint32_t index)
 {
 	(void)index;
 	male_start(index);
-
-	lock_acquire(lock_male);
-	lock_acquire(lock_sem);
-	// V(sem_mating);
-	mating_count++;
-	KASSERT(mating_count <= 3);
-	KASSERT(mating_count != 0);
-	if(mating_count < 3){
-	cv_wait(cv_mating, lock_sem);
-	}
-	mating_count--;
-	if(mating_count > 0){
-		cv_signal(cv_mating, lock_sem);
-	}
-
-	lock_release(lock_sem);
-	lock_release(lock_male);
+	P(sem_male);
+	// lock_acquire(lock_male);
+	// lock_acquire(lock_sem);
+	// // V(sem_mating);
+	// mating_count++;
+	// KASSERT(mating_count <= 3);
+	// KASSERT(mating_count != 0);
+	// if(mating_count < 3){
+	// cv_wait(cv_mating, lock_sem);
+	// }
+	// mating_count--;
+	// if(mating_count > 0){
+	// 	cv_signal(cv_mating, lock_sem);
+	// }
+	//
+	// lock_release(lock_sem);
+	// lock_release(lock_male);
 
 	male_end(index);
 	/*
@@ -120,23 +117,23 @@ female(uint32_t index)
 {
 	(void)index;
 	female_start(index);
-
-	lock_acquire(lock_female);
-	lock_acquire(lock_sem);
-	// V(sem_mating);
-	mating_count++;
-	KASSERT(mating_count <= 3);
-	KASSERT(mating_count != 0);
-	if(mating_count < 3){
-	cv_wait(cv_mating, lock_sem);
-	}
-	mating_count--;
-	if(mating_count > 0){
-		cv_signal(cv_mating, lock_sem);
-	}
-
-	lock_release(lock_sem);
-	lock_release(lock_female);
+	P(sem_female);
+	// lock_acquire(lock_female);
+	// lock_acquire(lock_sem);
+	// // V(sem_mating);
+	// mating_count++;
+	// KASSERT(mating_count <= 3);
+	// KASSERT(mating_count != 0);
+	// if(mating_count < 3){
+	// cv_wait(cv_mating, lock_sem);
+	// }
+	// mating_count--;
+	// if(mating_count > 0){
+	// 	cv_signal(cv_mating, lock_sem);
+	// }
+	//
+	// lock_release(lock_sem);
+	// lock_release(lock_female);
 
 	female_end(index);
 	/*
@@ -151,23 +148,24 @@ matchmaker(uint32_t index)
 {
 	(void)index;
 	matchmaker_start(index);
-
-	lock_acquire(lock_mm);
-	lock_acquire(lock_sem);
-	// V(sem_mating);
-	mating_count++;
-	KASSERT(mating_count <= 3);
-	KASSERT(mating_count != 0);
-	if(mating_count < 3){
-	cv_wait(cv_mating, lock_sem);
-	}
-	mating_count--;
-	if(mating_count > 0){
-		cv_signal(cv_mating, lock_sem);
-	}
-
-	lock_release(lock_sem);
-	lock_release(lock_mm);
+	V(sem_male);
+	V(sem_female);
+	// lock_acquire(lock_mm);
+	// lock_acquire(lock_sem);
+	// // V(sem_mating);
+	// mating_count++;
+	// KASSERT(mating_count <= 3);
+	// KASSERT(mating_count != 0);
+	// if(mating_count < 3){
+	// cv_wait(cv_mating, lock_sem);
+	// }
+	// mating_count--;
+	// if(mating_count > 0){
+	// 	cv_signal(cv_mating, lock_sem);
+	// }
+	//
+	// lock_release(lock_sem);
+	// lock_release(lock_mm);
 
 	matchmaker_end(index);
 	/*
