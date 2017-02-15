@@ -40,11 +40,29 @@
 #include <test.h>
 #include <synch.h>
 
+static struct semaphore *sem_mating;
+static struct lock *lock_male;
+static struct lock *lock_female;
+static struct lock *lock_mm;
+// static struct cv *cv_male;
+// static struct cv *cv_female;
+static struct cv *cv_mating;
+static struct lock *lock_sem;
+// static volatile unsigned mating_count;
 /*
  * Called by the driver during initialization.
  */
 
 void whalemating_init() {
+	sem_mating = sem_create("sem_mating",0);
+	lock_male = lock_create("lock_male");
+	lock_female = lock_create("lock_female");
+	lock_mm = lock_create("lock_mm");
+	// cv_male = cv_create("cv_male");
+	// cv_female = cv_create("cv_female");
+	cv_mating = cv_create("cv_mating");
+	lock_sem = lock_create("lock_sem");
+	// mating_count = 0;
 	return;
 }
 
@@ -54,6 +72,14 @@ void whalemating_init() {
 
 void
 whalemating_cleanup() {
+	sem_destroy(sem_mating);
+	lock_destroy(lock_male);
+	lock_destroy(lock_female);
+	lock_destroy(lock_mm);
+	// cv_destroy(cv_male);
+	// cv_destroy(cv_female);
+	cv_destroy(cv_mating);
+	lock_destroy(lock_sem);
 	return;
 }
 
@@ -61,10 +87,31 @@ void
 male(uint32_t index)
 {
 	(void)index;
+	male_start(index);
+
+	lock_acquire(lock_male);
+	lock_acquire(lock_sem);
+	V(sem_mating);
+	// mating_count++;
+	KASSERT(sem_mating->sem_count <= 3);
+	if(sem_mating->sem_count < 3){
+	cv_wait(cv_mating, lock_sem);
+	}
+
+	if(sem_mating->sem_count > 0){
+		P(sem_mating);
+		cv_signal(cv_mating, lock_sem);
+	}
+
+	lock_release(lock_sem);
+	lock_release(lock_male);
+
+	male_end(index);
 	/*
 	 * Implement this function by calling male_start and male_end when
 	 * appropriate.
 	 */
+
 	return;
 }
 
@@ -72,6 +119,26 @@ void
 female(uint32_t index)
 {
 	(void)index;
+	female_start(index);
+
+	lock_acquire(lock_female);
+	lock_acquire(lock_sem);
+	V(sem_mating);
+	// mating_count++;
+	KASSERT(sem_mating->sem_count <= 3);
+	if(sem_mating->sem_count < 3){
+	cv_wait(cv_mating, lock_sem);
+	}
+
+	if(sem_mating->sem_count > 0){
+		P(sem_mating);
+		cv_signal(cv_mating, lock_sem);
+	}
+
+	lock_release(lock_sem);
+	lock_release(lock_female);
+
+	female_end(index);
 	/*
 	 * Implement this function by calling female_start and female_end when
 	 * appropriate.
@@ -83,6 +150,26 @@ void
 matchmaker(uint32_t index)
 {
 	(void)index;
+	matchmaker_start(index);
+
+	lock_acquire(lock_mm);
+	lock_acquire(lock_sem);
+	V(sem_mating);
+	// mating_count++;
+	KASSERT(sem_mating->sem_count <= 3);
+	if(sem_mating->sem_count < 3){
+	cv_wait(cv_mating, lock_sem);
+	}
+
+	if(sem_mating->sem_count > 0){
+		P(sem_mating);
+		cv_signal(cv_mating, lock_sem);
+	}
+
+	lock_release(lock_sem);
+	lock_release(lock_mm);
+
+	matchmaker_end(index);
 	/*
 	 * Implement this function by calling matchmaker_start and matchmaker_end
 	 * when appropriate.
