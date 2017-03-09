@@ -39,7 +39,8 @@
 #include <array.h>
 #include <spinlock.h>
 #include <threadlist.h>
-
+#include <file_syscall.h>
+#include <limits.h>
 struct cpu;
 
 /* get machine-dependent defs */
@@ -117,6 +118,7 @@ struct thread {
 	 */
 
 	/* add more here as needed */
+	struct fileHandle * fileTable[OPEN_MAX];
 };
 
 /*

@@ -44,7 +44,7 @@
 #include <vfs.h>
 #include <syscall.h>
 #include <test.h>
-
+#include <file_syscall.h>
 /*
  * Load program "progname" and start running it in usermode.
  * Does not return except on error.
@@ -60,6 +60,13 @@ runprogram(char *progname)
 	int result;
 
 	/* Open the file. */
+	if(curthread->fileTable[0] == NULL){
+		result = fileTable_init();
+		if(result){
+			kprintf("fileTable init in runprogram error");
+			return result;
+		}
+	}
 	result = vfs_open(progname, O_RDONLY, 0, &v);
 	if (result) {
 		return result;
@@ -106,4 +113,3 @@ runprogram(char *progname)
 	panic("enter_new_process returned\n");
 	return EINVAL;
 }
-
