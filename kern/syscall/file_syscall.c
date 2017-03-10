@@ -15,17 +15,17 @@
 
 
 int
-fileHandle_init(char * filename, struct vnode *vn, struct fileHandle * fh, off_t offset, int flags, int refcount)
+fileHandle_init(char * filename, struct vnode *vn, struct fileHandle ** fh, off_t offset, int flags, int refcount)
 {
-	fh = (struct fileHandle *)kmalloc(sizeof(struct fileHandle));
-	if(fh == NULL){
+	fh[0] = (struct fileHandle *)kmalloc(sizeof(struct fileHandle));
+	if(*fh == NULL){
 		return ENFILE;
 	}
-	fh->vn = vn;
-	fh->flags = flags;
-	fh->offset = offset;
-	fh->refcount = refcount;
-	fh->lk = lock_create(filename);
+	fh[0]->vn = vn;
+	fh[0]->flags = flags;
+	fh[0]->offset = offset;
+	fh[0]->refcount = refcount;
+	fh[0]->lk = lock_create(filename);
 	return 0;
 }
 
@@ -36,27 +36,25 @@ fileTable_init(void)
 	struct vnode *v1;//stdout
 	struct vnode *v2;//stderr
 	// char console[5] = "con:";
-	char * console = NULL;
-	console = kstrdup("con:");
+	char *console0 = NULL;
+	char *console1 = NULL;
+	char *console2 = NULL;
+	console0 = kstrdup("con:");
+	console1 = kstrdup("con:");
+	console2 = kstrdup("con:");
 	// int err = 0;
 
-	if(vfs_open(console, O_RDONLY, 0, &v0)) {
-		// kfree(v0);
+	if(vfs_open(console0, O_RDONLY, 0, &v0)) {
+		kfree(console0);
 		// kfree(v1);
 		// kfree(v2);
 		vfs_close(v0);
 		return EINVAL;
 	}
-	if(fileHandle_init(console, v0, curthread->fileTable[0], 0, O_RDONLY, 1)){
-		// kfree(v0);
-		// kfree(v1);
-		// kfree(v2);
-		vfs_close(v0);
-		return ENFILE;
-	}
+	fileHandle_init(console0, v0, &curthread->fileTable[0], 0, O_RDONLY, 1);
 
-	if(vfs_open(console, O_WRONLY, 0, &v1)) {
-		// kfree(v0);
+	if(vfs_open(console1, O_WRONLY, 0, &v1)) {
+		kfree(console1);
 		// kfree(v1);
 		// kfree(v2);
 		lock_destroy(curthread->fileTable[0]->lk);
@@ -65,18 +63,9 @@ fileTable_init(void)
 		vfs_close(v1);
 		return EINVAL;
 	}
-	if(fileHandle_init(console, v1, curthread->fileTable[1], 0, O_WRONLY, 1)){
-		// kfree(v0);
-		// kfree(v1);
-		// kfree(v2);
-		lock_destroy(curthread->fileTable[0]->lk);
-		kfree(curthread->fileTable[0]);
-		vfs_close(v0);
-		vfs_close(v1);
-		return ENFILE;
-	}
+	fileHandle_init(console1, v1, &curthread->fileTable[1], 0, O_WRONLY, 1);
 
-	if(vfs_open(console, O_WRONLY, 0, &v2)) {
+	if(vfs_open(console2, O_WRONLY, 0, &v2)) {
 		// kfree(v0);
 		// kfree(v1);
 		// kfree(v2);
@@ -89,19 +78,8 @@ fileTable_init(void)
 		vfs_close(v2);
 		return EINVAL;
 	}
-	if(fileHandle_init(console, v2, curthread->fileTable[2], 0, O_WRONLY, 1)){
-		// kfree(v0);
-		// kfree(v1);
-		// kfree(v2);
-		lock_destroy(curthread->fileTable[0]->lk);
-		kfree(curthread->fileTable[0]);
-		lock_destroy(curthread->fileTable[1]->lk);
-		kfree(curthread->fileTable[1]);
-		vfs_close(v0);
-		vfs_close(v1);
-		vfs_close(v2);
-		return ENFILE;
-	}
+	fileHandle_init(console2, v2, &curthread->fileTable[2], 0, O_WRONLY, 1);
+
 	return 0;
 }
 int
@@ -111,7 +89,7 @@ sys_open(const char * filename, int flags, int * retval)
 	size_t len;
 	// off_t off = 0;
 	struct vnode * v;
-	char * name = (char *)kmalloc(sizeof(char) * PATH_MAX);
+	char *name = (char *)kmalloc(sizeof(char) *PATH_MAX);
 	err = copyinstr((const_userptr_t)filename,name, PATH_MAX, &len);
 	if(err){
 		kfree(name);
@@ -125,23 +103,22 @@ sys_open(const char * filename, int flags, int * retval)
 		}
 	}
 	if(index == OPEN_MAX){
+		kfree(name);
 		return EMFILE;
 	}
 	if(vfs_open(name, flags, 0, &v)){
-		vfs_close(v);
 		kfree(name);
+		kfree(curthread->fileTable[index]);
+                curthread->fileTable[index] = NULL;
+		vfs_close(v);
 		return EINVAL;
 	}
-	if(fileHandle_init(name, v,curthread->fileTable[index], 0, flags, 1)){
-		vfs_close(v);
-		kfree(name);
-		curthread->fileTable[index] = NULL;
-		return ENFILE;
-	}
+	fileHandle_init(name, v,&curthread->fileTable[index], 0, flags, 1);		
 	*retval = index;
 	kfree(name);
 	return 0;
 }
+
 int
 sys_write(int fd, const void *buffer, size_t len)
 {

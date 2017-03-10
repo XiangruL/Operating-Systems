@@ -63,7 +63,7 @@ runprogram(char *progname)
 	if(curthread->fileTable[0] == NULL){
 		result = fileTable_init();
 		if(result){
-			kprintf("fileTable init in runprogram error");
+		//	kprintf("fileTable init in runprogram error");
 			return result;
 		}
 	}
