@@ -16,6 +16,6 @@ int sys_open(const char * filename, int flags, int * retval);
 int sys_write(int fd, const void *, size_t len, int * retval);//int -> size_t, types.h
 int sys_read(int fd, void * buf, size_t len, int * retval);
 int sys_close(int fd);
-
+int sys___getcwd(char * buffer, size_t len, int * retval);
 
 #endif

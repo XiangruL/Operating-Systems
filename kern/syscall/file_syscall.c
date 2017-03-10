@@ -210,6 +210,9 @@ sys_read(int fd, void * buffer, size_t len, int * retval){
 	int result = 0;
 	void * buf = NULL;
 	buf = kmalloc(sizeof(*buffer) * len);
+	if(buf == NULL) {
+		return EFAULT;
+	}
 	// result = copyin((const_userptr_t)buffer,buf,len);
 	// if(result){
 	// 	kfree(buf);
@@ -228,7 +231,6 @@ sys_read(int fd, void * buffer, size_t len, int * retval){
 		lock_release(curthread->fileTable[fd]->lk);
 		return result;
 	}
-	lock_release(curthread->fileTable[fd]->lk);
 	result = copyout((const void *)buf, (userptr_t)buffer,len);
 	if(result){
 		kfree(buf);
@@ -257,5 +259,38 @@ sys_close(int fd){
 		kfree(curthread->fileTable[fd]);
 		curthread->fileTable[fd] = NULL;
 	}
+	return 0;
+}
+
+int
+sys___getcwd(char * buffer, size_t len, int * retval){
+
+	if(buffer == NULL || strlen(buffer) != len) {
+		return EFAULT;
+	}
+	int result = 0;
+	char * buf = NULL;
+	buf = kmalloc(sizeof(*buffer) * len);
+	if(buf == NULL) {
+		return EFAULT;
+	}
+	struct iovec iov;
+	struct uio u;
+	// struct iovec *iov, struct uio *u,
+	// 	  void *kbuf, size_t len, off_t pos, enum uio_rw rw
+	uio_kinit(&iov, &u, buf, len-1, 0, UIO_READ);
+	result = vfs_getcwd(&u);
+	if(result){
+		kfree(buf);
+		return result;
+	};
+	buf[len-1 - u.uio_resid] = '\0';
+	result = copyout((const void *)buf, (userptr_t)buffer,len);
+	if(result){
+		kfree(buf);
+		return EINVAL;
+	}
+	*retval = strlen(buf);
+	kfree(buf);
 	return 0;
 }
