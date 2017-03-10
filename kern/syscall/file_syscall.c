@@ -12,6 +12,8 @@
 #include <synch.h>
 #include <kern/errno.h>
 #include <copyinout.h>
+#include <kern/stat.h>
+#include <kern/seek.h>
 
 
 int
@@ -210,6 +212,9 @@ sys_read(int fd, void * buffer, size_t len, int * retval){
 	int result = 0;
 	void * buf = NULL;
 	buf = kmalloc(sizeof(*buffer) * len);
+	if(buf == NULL) {
+		return EFAULT;
+	}
 	// result = copyin((const_userptr_t)buffer,buf,len);
 	// if(result){
 	// 	kfree(buf);
@@ -256,5 +261,123 @@ sys_close(int fd){
 		kfree(curthread->fileTable[fd]);
 		curthread->fileTable[fd] = NULL;
 	}
+	return 0;
+}
+
+int
+sys___getcwd(char * buffer, size_t len, int * retval){
+
+	if(buffer == NULL || strlen(buffer) != len) {
+		return EFAULT;
+	}
+	int result = 0;
+	char * buf = NULL;
+	buf = kmalloc(sizeof(*buffer) * len);
+	if(buf == NULL) {
+		return EFAULT;
+	}
+	struct iovec iov;
+	struct uio u;
+	// struct iovec *iov, struct uio *u,
+	// 	  void *kbuf, size_t len, off_t pos, enum uio_rw rw
+	uio_kinit(&iov, &u, buf, len-1, 0, UIO_READ);
+	result = vfs_getcwd(&u);
+	if(result){
+		kfree(buf);
+		return result;
+	};
+	buf[len-1 - u.uio_resid] = '\0';
+	result = copyout((const void *)buf, (userptr_t)buffer,len);
+	if(result){
+		kfree(buf);
+		return EINVAL;
+	}
+	*retval = strlen(buf);
+	kfree(buf);
+	return 0;
+}
+
+off_t
+sys_lseek(int fd, off_t pos, int whence, int64_t * retval){
+	//EBADF, EINVAL, ESPIPE
+	if(fd < 0 || fd >= OPEN_MAX || curthread->fileTable[fd] == NULL){
+		return EBADF;
+	}
+	// if(fd >=0 || fd <=2){
+	// 	return ESPIPE;
+	// }
+	int err;
+	struct stat * statbuf;
+	statbuf = (struct stat *)kmalloc(sizeof(struct stat));
+	off_t size, tmppos = 0;
+
+	lock_acquire(curthread->fileTable[fd]->lk);
+	if(!VOP_ISSEEKABLE(curthread->fileTable[fd]->vn)){
+		lock_release(curthread->fileTable[fd]->lk);
+		return ESPIPE;
+	}
+	err = VOP_STAT(curthread->fileTable[fd]->vn, statbuf);
+	if(err){
+		lock_release(curthread->fileTable[fd]->lk);
+		return err;
+	}
+	size = statbuf->st_size;
+	if(whence == SEEK_SET){
+		tmppos = pos;
+	}else if(whence == SEEK_CUR){
+		tmppos = curthread->fileTable[fd]->offset + pos;
+	}else if(whence == SEEK_END){
+		tmppos = size + pos;
+	}else{
+		lock_release(curthread->fileTable[fd]->lk);
+		return EINVAL;
+	}
+	if(tmppos < 0){
+		lock_release(curthread->fileTable[fd]->lk);
+		return EINVAL;
+	}
+	// if(whence != SEEK_SET || whence != SEEK_CUR || whence != SEEK_END){
+	// 	lock
+	// 	return EINVAL;
+	// }
+	*retval = (int64_t)tmppos;
+	curthread->fileTable[fd]->offset = tmppos;
+	lock_release(curthread->fileTable[fd]->lk);
+	return 0;
+}
+
+int
+sys_dup2(int oldfd, int newfd, int * retval){
+	if(oldfd < 0 || oldfd >= OPEN_MAX || curthread->fileTable[oldfd] == NULL){
+		return EBADF;
+	}
+
+	if(newfd < 0 || newfd >= OPEN_MAX){
+		return EBADF;
+	}
+	lock_acquire(curthread->fileTable[oldfd]->lk);
+	if(curthread->fileTable[newfd] == NULL){
+		curthread->fileTable[newfd] = (struct fileHandle *)kmalloc(sizeof(struct fileHandle));
+		// KASSERT(fh != NULL);
+		if(curthread->fileTable[newfd] == NULL){
+			return ENFILE;
+		}
+		curthread->fileTable[newfd] = curthread->fileTable[oldfd];
+	}else{
+		sys_close(newfd);
+		if(curthread->fileTable[newfd] == NULL){
+			curthread->fileTable[newfd] = (struct fileHandle *)kmalloc(sizeof(struct fileHandle));
+			// KASSERT(fh != NULL);
+			if(curthread->fileTable[newfd] == NULL){
+				return ENFILE;
+			}
+			curthread->fileTable[newfd] = curthread->fileTable[oldfd];
+		}else{
+			curthread->fileTable[newfd] = curthread->fileTable[oldfd];
+		}
+
+	}
+	*retval = newfd;
+	lock_release(curthread->fileTable[oldfd]->lk);
 	return 0;
 }
