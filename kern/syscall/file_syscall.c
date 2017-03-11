@@ -255,6 +255,7 @@ sys_close(int fd){
 	if(curthread->fileTable[fd]->refcount > 1){
 		curthread->fileTable[fd]->refcount--;
 		lock_release(curthread->fileTable[fd]->lk);
+		curthread->fileTable[fd] = NULL;
 	}else{
 		vfs_close(curthread->fileTable[fd]->vn);
 		lock_release(curthread->fileTable[fd]->lk);
@@ -355,6 +356,10 @@ sys_dup2(int oldfd, int newfd, int * retval){
 	if(newfd < 0 || newfd >= OPEN_MAX){
 		return EBADF;
 	}
+	if(newfd == oldfd){
+		*retval = newfd;
+		return 0;
+	}
 	lock_acquire(curthread->fileTable[oldfd]->lk);
 	if(curthread->fileTable[newfd] == NULL){
 		curthread->fileTable[newfd] = (struct fileHandle *)kmalloc(sizeof(struct fileHandle));
@@ -379,5 +384,25 @@ sys_dup2(int oldfd, int newfd, int * retval){
 	}
 	*retval = newfd;
 	lock_release(curthread->fileTable[oldfd]->lk);
+	return 0;
+}
+
+int
+sys_chdir(const char *pathname) {
+	int err=0;
+	char *buf;
+	size_t len;
+	buf = (char *) kmalloc(sizeof(*pathname) * PATH_MAX);
+	err = copyinstr((const_userptr_t)pathname,buf, PATH_MAX, &len);
+	if(err) {
+		kfree(buf);
+		return EFAULT;
+	}
+	err = vfs_chdir(buf);
+	if(err) {
+		kfree(buf);
+		return err;
+	}
+	kfree(buf);
 	return 0;
 }
