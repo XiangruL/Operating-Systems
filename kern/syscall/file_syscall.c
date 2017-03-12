@@ -148,7 +148,6 @@ sys_open(const char * filename, int flags, int * retval)
 		return EMFILE;
 	}
 	if(vfs_open(name, flags, 0, &v)){
-		vfs_close(v);
 		kfree(name);
 		return EINVAL;
 	}
@@ -169,8 +168,11 @@ sys_write(int fd, const void *buffer, size_t len, int * retval)
 	if(fd < 0 || fd >= OPEN_MAX){
 		return EBADF;
 	}
-	if(curthread->fileTable[fd] == NULL || curthread->fileTable[fd]->flags == O_RDONLY){
+	if(curthread->fileTable[fd] == NULL || curthread->fileTable[fd]->flags % 4 == 0){//O_RDONLY = 0
 		return EBADF;
+	}
+	if(buffer == NULL){
+		return EFAULT;
 	}
 	int result = 0;
 	void * buf = NULL;
@@ -178,7 +180,7 @@ sys_write(int fd, const void *buffer, size_t len, int * retval)
 	result = copyin((const_userptr_t)buffer,buf,len);
 	if(result){
 		kfree(buf);
-		return EINVAL;
+		return result;
 	}
 	struct iovec iov;
 	struct uio u;
@@ -206,8 +208,11 @@ sys_read(int fd, void * buffer, size_t len, int * retval){
 	if(fd < 0 || fd >= OPEN_MAX){
 		return EBADF;
 	}
-	if(curthread->fileTable[fd] == NULL || curthread->fileTable[fd]->flags == O_WRONLY){
+	if(curthread->fileTable[fd] == NULL || curthread->fileTable[fd]->flags % 4 == 1){//O_WRONLY = 1
 		return EBADF;
+	}
+	if(buffer == NULL){
+		return EFAULT;
 	}
 	int result = 0;
 	void * buf = NULL;
@@ -236,7 +241,8 @@ sys_read(int fd, void * buffer, size_t len, int * retval){
 	result = copyout((const void *)buf, (userptr_t)buffer,len);
 	if(result){
 		kfree(buf);
-		return EINVAL;
+		lock_release(curthread->fileTable[fd]->lk);
+		return result;
 	}
 	kfree(buf);
 	curthread->fileTable[fd]->offset = u.uio_offset;
@@ -268,7 +274,7 @@ sys_close(int fd){
 int
 sys___getcwd(char * buffer, size_t len, int * retval){
 
-	if(buffer == NULL || strlen(buffer) != len) {
+	if(buffer == NULL) {
 		return EFAULT;
 	}
 	int result = 0;
@@ -277,22 +283,30 @@ sys___getcwd(char * buffer, size_t len, int * retval){
 	if(buf == NULL) {
 		return EFAULT;
 	}
+	size_t newlen;
+	result = copyinstr((const_userptr_t)buffer, buf, PATH_MAX, &newlen);
+	if(result){
+		kfree(buf);
+		return result;
+	}
 	struct iovec iov;
 	struct uio u;
 	// struct iovec *iov, struct uio *u,
 	// 	  void *kbuf, size_t len, off_t pos, enum uio_rw rw
-	uio_kinit(&iov, &u, buf, len-1, 0, UIO_READ);
+	uio_kinit(&iov, &u, (userptr_t)buffer, len-1, 0, UIO_READ);
+	u.uio_segflg = UIO_USERSPACE;
+	u.uio_space = curproc->p_addrspace;
 	result = vfs_getcwd(&u);
 	if(result){
 		kfree(buf);
 		return result;
 	};
-	buf[len-1 - u.uio_resid] = '\0';
-	result = copyout((const void *)buf, (userptr_t)buffer,len);
-	if(result){
-		kfree(buf);
-		return EINVAL;
-	}
+	buffer[len-1 - u.uio_resid] = '\0';
+	// result = copyoutstr((const char *)buf, (userptr_t)buffer, len-u.uio_resid, &len);
+	// if(result){
+	// 	kfree(buf);
+	// 	return EINVAL;
+	// }
 	*retval = strlen(buf);
 	kfree(buf);
 	return 0;
