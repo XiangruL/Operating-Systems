@@ -154,9 +154,9 @@ sys_open(const char * filename, int flags, int * retval)
 	}
 	if(fileHandle_init(name, v, &curthread->fileTable[index], 0, flags, 1)){
 		vfs_close(v);
+		kfree(name);
 		return EINVAL;
 	}
-	fileHandle_init(name, v,&curthread->fileTable[index], 0, flags, 1);		
 	*retval = index;
 	kfree(name);
 	return 0;
@@ -169,16 +169,23 @@ sys_write(int fd, const void *buffer, size_t len, int * retval)
 	if(fd < 0 || fd >= OPEN_MAX){
 		return EBADF;
 	}
-	if(curthread->fileTable[fd] == NULL || curthread->fileTable[fd]->flags == O_RDONLY){
+	// if fd is null or flag is read only 
+	if(curthread->fileTable[fd] == NULL || curthread->fileTable[fd]->flags % 4 == 0){
 		return EBADF;
+	}
+	if (buffer == NULL) {
+		return EFAULT;
 	}
 	int result = 0;
 	void * buf = NULL;
 	buf = kmalloc(sizeof(*buffer) * len);
+	if (buf == NULL) {
+		return EFAULT;
+	}
 	result = copyin((const_userptr_t)buffer,buf,len);
 	if(result){
 		kfree(buf);
-		return EINVAL;
+		return result;
 	}
 	struct iovec iov;
 	struct uio u;
@@ -206,8 +213,12 @@ sys_read(int fd, void * buffer, size_t len, int * retval){
 	if(fd < 0 || fd >= OPEN_MAX){
 		return EBADF;
 	}
-	if(curthread->fileTable[fd] == NULL || curthread->fileTable[fd]->flags == O_WRONLY){
+	// if fd is null or flag is write only 
+	if(curthread->fileTable[fd] == NULL || curthread->fileTable[fd]->flags % 2 == 1) {
 		return EBADF;
+	}
+	if (buffer == NULL) {
+		return EFAULT;
 	}
 	int result = 0;
 	void * buf = NULL;
@@ -236,7 +247,8 @@ sys_read(int fd, void * buffer, size_t len, int * retval){
 	result = copyout((const void *)buf, (userptr_t)buffer,len);
 	if(result){
 		kfree(buf);
-		return EINVAL;
+		lock_release(curthread->fileTable[fd]->lk);
+		return result;
 	}
 	kfree(buf);
 	curthread->fileTable[fd]->offset = u.uio_offset;
@@ -267,8 +279,9 @@ sys_close(int fd){
 
 int
 sys___getcwd(char * buffer, size_t len, int * retval){
-
-	if(buffer == NULL || strlen(buffer) != len) {
+	
+	size_t length;
+	if(buffer == NULL) {
 		return EFAULT;
 	}
 	int result = 0;
@@ -277,23 +290,25 @@ sys___getcwd(char * buffer, size_t len, int * retval){
 	if(buf == NULL) {
 		return EFAULT;
 	}
+	result = copyinstr((userptr_t)buffer, buf, PATH_MAX, &length);
+        if(result){
+                kfree(buf);
+                return result;
+        }
 	struct iovec iov;
 	struct uio u;
 	// struct iovec *iov, struct uio *u,
 	// 	  void *kbuf, size_t len, off_t pos, enum uio_rw rw
-	uio_kinit(&iov, &u, buf, len-1, 0, UIO_READ);
+	uio_kinit(&iov, &u, (userptr_t)buf, len-1, 0, UIO_READ);
+	u.uio_segflg = UIO_USERSPACE;
+	u.uio_space = curproc->p_addrspace;
 	result = vfs_getcwd(&u);
 	if(result){
 		kfree(buf);
 		return result;
 	};
-	buf[len-1 - u.uio_resid] = '\0';
-	result = copyout((const void *)buf, (userptr_t)buffer,len);
-	if(result){
-		kfree(buf);
-		return EINVAL;
-	}
-	*retval = strlen(buf);
+	buffer[length-1 - u.uio_resid] = '\0';
+	*retval = strlen(buffer);
 	kfree(buf);
 	return 0;
 }
