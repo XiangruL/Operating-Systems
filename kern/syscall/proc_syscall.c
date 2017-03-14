@@ -6,7 +6,7 @@
 #include <addrspace.h>
 #include <kern/errno.h>
 #include <proc_syscall.h>
-
+#include <vnode.h>
 //#include <syscall.h>
 
 pid_t
@@ -16,7 +16,7 @@ sys_getpid(void){
 
 int sys_fork(struct trapframe * tf, int * err){
     //copy parent's tf to child's new trapframe
-    struct trapframe * newtf;
+    struct trapframe * newtf = NULL;
     newtf = (struct trapframe *)kmalloc(sizeof(struct trapframe));
     if(newtf == NULL){
         *err = ENOMEM;
@@ -25,7 +25,7 @@ int sys_fork(struct trapframe * tf, int * err){
     memcpy(newtf, tf, sizeof(struct trapframe));
 
     //copy parent's as to child's new addrspace
-    struct addrspace * newas;
+    struct addrspace * newas = NULL;
     int result = 0;
     result = as_copy(curproc->p_addrspace, &newas);
     if(newas == NULL){
@@ -35,17 +35,17 @@ int sys_fork(struct trapframe * tf, int * err){
     }
 
     //create new proc, set child's PPID to parent's PID
-    struct proc * newproc;
-    newproc = proc_create_runprogram("child");
+    struct proc * newproc = NULL;
+    newproc = proc_create("child");
     if(newproc == NULL){
         kfree(newtf);
-        as_destroy(newas);//now same as kfree(newas)
+        // as_destroy(newas);//now same as kfree(newas)
         *err = ENOMEM;
         return -1;
     }
     newproc->p_PPID = curproc->p_PID;
     /* copy filetable from proc to newproc
-	file handle is not null, increase reference num by 1 */ 
+	file handle is not null, increase reference num by 1 */
     for(int fd=0;fd<OPEN_MAX;fd++)
 	{
         newproc->fileTable[fd] = curproc->fileTable[fd];
@@ -59,8 +59,15 @@ int sys_fork(struct trapframe * tf, int * err){
     if(result) {
         return result;
     }
+    result = newproc->p_PID;//could panic if just return p_PID
+    spinlock_acquire(&curproc->p_lock);
+	if (curproc->p_cwd != NULL) {
+		VOP_INCREF(curproc->p_cwd);
+		newproc->p_cwd = curproc->p_cwd;
+	}
+	spinlock_release(&curproc->p_lock);
     curproc->p_numthreads++;
-    return 0;
+    return result;
 }
 
 void
@@ -84,7 +91,6 @@ entrypoint(void *data1, unsigned long data2){
     // proc_setas(newas);
     curproc->p_addrspace = newas;
     as_activate();
-
     mips_usermode(&tf);
     // struct trapframe tf;
     //
@@ -98,4 +104,4 @@ entrypoint(void *data1, unsigned long data2){
 	// tf.tf_sp = stack;
     //
 	// mips_usermode(&tf);
-};
+}
