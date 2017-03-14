@@ -316,7 +316,7 @@ sys___getcwd(char * buffer, size_t len, int * retval){
 	return 0;
 }
 
-off_t
+int
 sys_lseek(int fd, off_t pos, int whence, int64_t * retval){
 	//EBADF, EINVAL, ESPIPE
 	if(fd < 0 || fd >= OPEN_MAX || curproc->fileTable[fd] == NULL){

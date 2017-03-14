@@ -18,6 +18,6 @@ int sys_read(int fd, void * buf, size_t len, int * retval);
 int sys_close(int fd);
 int sys_chdir(const char * pathname);
 int sys___getcwd(char * buffer, size_t len, int * retval);
-off_t sys_lseek(int fd, off_t pos, int whence, int64_t * retval);
+int sys_lseek(int fd, off_t pos, int whence, int64_t * retval);
 int sys_dup2(int oldfd, int newfd, int * retval);
 #endif

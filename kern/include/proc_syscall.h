@@ -3,7 +3,8 @@
 #include <types.h>
 #include <limits.h>
 
-pid_t sys_getpid(void);
-int sys_fork(struct trapframe * tf, int * err);
-void entrypoint(void * data1, unsigned long data2);
+int sys_getpid(pid_t * retval);
+int sys_fork(struct trapframe * tf, int * retval);
+// void entrypoint(void * data1, unsigned long data2);
+
 #endif

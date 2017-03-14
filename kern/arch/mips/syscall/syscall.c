@@ -38,6 +38,7 @@
 #include <file_syscall.h>
 #include <copyinout.h>
 #include <proc_syscall.h>
+#include <addrspace.h>
 
 /*
  * System call dispatcher.
@@ -160,12 +161,13 @@ syscall(struct trapframe *tf)
 		break;
 		//process syscall
 		case SYS_getpid:
-		retval = sys_getpid();
+		err = sys_getpid((pid_t *)&retval);
 		break;
 
 		case SYS_fork:
-		retval = sys_fork(tf, &err);
+		err = sys_fork(tf, &retval);
 		break;
+
 
 	    default:
 		kprintf("Unknown syscall %d\n", callno);
@@ -211,7 +213,22 @@ syscall(struct trapframe *tf)
  * Thus, you can trash it and do things another way if you prefer.
  */
 void
-enter_forked_process(struct trapframe *tf)
+enter_forked_process(void *data1, unsigned long data2)
 {
-	(void)tf;
+	struct trapframe *oldtf = data1;
+	struct trapframe newtfstack;
+	memcpy(&newtfstack, oldtf, sizeof(struct trapframe));
+	kfree(oldtf);
+	(void)data2;
+	// struct addrspace * newas = (struct addrspace*) data2;
+	// curproc->p_addrspace = newas;
+	as_activate();
+	newtfstack.tf_v0 = 0;
+	newtfstack.tf_a3 = 0;
+	newtfstack.tf_epc += 4;
+	/* Make sure the syscall code didn't forget to lower spl */
+	KASSERT(curthread->t_curspl == 0);
+	/* ...or leak any spinlocks */
+	KASSERT(curthread->t_iplhigh_count == 0);
+	mips_usermode(&newtfstack);
 }

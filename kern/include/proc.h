@@ -79,7 +79,9 @@ struct proc {
 	pid_t p_PPID;
 	bool p_exit;
 	int p_exitcode;
-	struct semaphore * p_sem;
+	// struct semaphore * p_sem;
+	struct lock *p_lk;
+	struct cv *p_cv;
 	//lock / sem / cv. wait
 	struct fileHandle * fileTable[OPEN_MAX];
 

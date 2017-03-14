@@ -90,13 +90,7 @@ proc_create(const char *name)
 	// if(result){
 	// 	return NULL;
 	// }
-	//semaphore
-	proc->p_sem = sem_create("proc_sem", 1);
-	if(proc->p_sem == NULL){
-		kfree(proc->p_name);
-		kfree(proc);
-		return NULL;
-	}
+	
 	// PID
 	int i = PID_MIN;
 	while(i < PID_MAX){
@@ -108,6 +102,28 @@ proc_create(const char *name)
 	if(i == PID_MAX){
 		return NULL;//ENPROC/EMPROC
 	}
+
+	//semaphore
+	// proc->p_sem = sem_create("proc_sem", 1);
+	proc->p_lk = lock_create("proc lock");
+	if(proc->p_lk == NULL){
+		kfree(proc->p_name);
+		kfree(proc);
+		return NULL;
+	}
+	proc->p_cv = cv_create("proc cv");
+	if(proc->p_cv == NULL){
+		kfree(proc->p_name);
+		kfree(proc);
+		lock_destroy(proc->p_lk);
+		return NULL;
+	}
+	// if(proc->p_sem == NULL){
+	// 	kfree(proc->p_name);
+	// 	kfree(proc);
+	// 	return NULL;
+	// }
+
 	procTable[i] = proc;
 	proc->p_PID = i;
 	proc->p_PPID = -1;
