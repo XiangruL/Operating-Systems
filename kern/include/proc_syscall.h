@@ -5,6 +5,6 @@
 
 int sys_getpid(pid_t * retval);
 int sys_fork(struct trapframe * tf, int * retval);
-// void entrypoint(void * data1, unsigned long data2);
+void entrypoint(void * data1, unsigned long data2);
 
 #endif
