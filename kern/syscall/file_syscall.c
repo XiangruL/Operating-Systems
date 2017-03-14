@@ -54,7 +54,7 @@ fileTable_init(void)
 		vfs_close(v0);
 		return EINVAL;
 	}
-	if(fileHandle_init(console, v0, &curthread->fileTable[0], 0, O_RDONLY, 1)){
+	if(fileHandle_init(console, v0, &curproc->fileTable[0], 0, O_RDONLY, 1)){
 		kfree(console);
 		kfree(console1);
 		kfree(console2);
@@ -69,21 +69,21 @@ fileTable_init(void)
 		kfree(console);
 		kfree(console1);
 		kfree(console2);
-		lock_destroy(curthread->fileTable[0]->lk);
-		kfree(curthread->fileTable[0]);
+		lock_destroy(curproc->fileTable[0]->lk);
+		kfree(curproc->fileTable[0]);
 		vfs_close(v0);
 		vfs_close(v1);
 		return EINVAL;
 	}
-	if(fileHandle_init(console1, v1, &curthread->fileTable[1], 0, O_WRONLY, 1)){
+	if(fileHandle_init(console1, v1, &curproc->fileTable[1], 0, O_WRONLY, 1)){
 		// kfree(v0);
 		// kfree(v1);
 		// kfree(v2);
 		kfree(console);
 		kfree(console1);
 		kfree(console2);
-		lock_destroy(curthread->fileTable[0]->lk);
-		kfree(curthread->fileTable[0]);
+		lock_destroy(curproc->fileTable[0]->lk);
+		kfree(curproc->fileTable[0]);
 		vfs_close(v0);
 		vfs_close(v1);
 		return ENFILE;
@@ -96,27 +96,27 @@ fileTable_init(void)
 		kfree(console);
 		kfree(console1);
 		kfree(console2);
-		lock_destroy(curthread->fileTable[0]->lk);
-		kfree(curthread->fileTable[0]);
-		lock_destroy(curthread->fileTable[1]->lk);
-		kfree(curthread->fileTable[1]);
+		lock_destroy(curproc->fileTable[0]->lk);
+		kfree(curproc->fileTable[0]);
+		lock_destroy(curproc->fileTable[1]->lk);
+		kfree(curproc->fileTable[1]);
 		vfs_close(v0);
 		vfs_close(v1);
 		vfs_close(v2);
 		return EINVAL;
 	}
 
-	if(fileHandle_init(console2, v2, &curthread->fileTable[2], 0, O_WRONLY, 1)){
+	if(fileHandle_init(console2, v2, &curproc->fileTable[2], 0, O_WRONLY, 1)){
 		// kfree(v0);
 		// kfree(v1);
 		// kfree(v2);
 		kfree(console);
 		kfree(console1);
 		kfree(console2);
-		lock_destroy(curthread->fileTable[0]->lk);
-		kfree(curthread->fileTable[0]);
-		lock_destroy(curthread->fileTable[1]->lk);
-		kfree(curthread->fileTable[1]);
+		lock_destroy(curproc->fileTable[0]->lk);
+		kfree(curproc->fileTable[0]);
+		lock_destroy(curproc->fileTable[1]->lk);
+		kfree(curproc->fileTable[1]);
 		vfs_close(v0);
 		vfs_close(v1);
 		vfs_close(v2);
@@ -138,7 +138,7 @@ sys_open(const char * filename, int flags, int * retval)
 		return err;
 	}
 	while(index < OPEN_MAX){
-		if(curthread->fileTable[index] == NULL){
+		if(curproc->fileTable[index] == NULL){
 			break;
 		}else{
 			index++;
@@ -152,10 +152,11 @@ sys_open(const char * filename, int flags, int * retval)
 		kfree(name);
 		return EINVAL;
 	}
-	if(fileHandle_init(name, v, &curthread->fileTable[index], 0, flags, 1)){
+	if(fileHandle_init(name, v, &curproc->fileTable[index], 0, flags, 1)){
 		vfs_close(v);
 		kfree(name);
-		return EINVAL;
+		curproc->fileTable[index] = NULL;
+		return ENFILE;
 	}
 	*retval = index;
 	kfree(name);
@@ -169,11 +170,10 @@ sys_write(int fd, const void *buffer, size_t len, int * retval)
 	if(fd < 0 || fd >= OPEN_MAX){
 		return EBADF;
 	}
-	// if fd is null or flag is read only 
-	if(curthread->fileTable[fd] == NULL || curthread->fileTable[fd]->flags % 4 == 0){
+	if(curproc->fileTable[fd] == NULL || curproc->fileTable[fd]->flags % 4 == 0){//O_RDONLY = 0
 		return EBADF;
 	}
-	if (buffer == NULL) {
+	if(buffer == NULL){
 		return EFAULT;
 	}
 	int result = 0;
@@ -189,21 +189,21 @@ sys_write(int fd, const void *buffer, size_t len, int * retval)
 	}
 	struct iovec iov;
 	struct uio u;
-	lock_acquire(curthread->fileTable[fd]->lk);
+	lock_acquire(curproc->fileTable[fd]->lk);
 	// struct iovec *iov, struct uio *u,
 	// 	  void *kbuf, size_t len, off_t pos, enum uio_rw rw
-	uio_kinit(&iov, &u, buf, len, curthread->fileTable[fd]->offset, UIO_WRITE);
+	uio_kinit(&iov, &u, buf, len, curproc->fileTable[fd]->offset, UIO_WRITE);
 	// u.uio_space = curproc->p_addrspace;
-	result = VOP_WRITE(curthread->fileTable[fd]->vn, &u);
+	result = VOP_WRITE(curproc->fileTable[fd]->vn, &u);
 	if(result){
 		kfree(buf);
-		lock_release(curthread->fileTable[fd]->lk);
+		lock_release(curproc->fileTable[fd]->lk);
 		return result;
 	}
 	kfree(buf);
-	curthread->fileTable[fd]->offset = u.uio_offset;
+	curproc->fileTable[fd]->offset = u.uio_offset;
 	*retval = len - u.uio_resid;
-	lock_release(curthread->fileTable[fd]->lk);
+	lock_release(curproc->fileTable[fd]->lk);
 	return 0;
 }
 
@@ -213,11 +213,10 @@ sys_read(int fd, void * buffer, size_t len, int * retval){
 	if(fd < 0 || fd >= OPEN_MAX){
 		return EBADF;
 	}
-	// if fd is null or flag is write only 
-	if(curthread->fileTable[fd] == NULL || curthread->fileTable[fd]->flags % 2 == 1) {
+	if(curproc->fileTable[fd] == NULL || curproc->fileTable[fd]->flags % 4 == 1){//O_WRONLY = 1
 		return EBADF;
 	}
-	if (buffer == NULL) {
+	if(buffer == NULL){
 		return EFAULT;
 	}
 	int result = 0;
@@ -235,52 +234,50 @@ sys_read(int fd, void * buffer, size_t len, int * retval){
 	struct uio u;
 	// struct iovec *iov, struct uio *u,
 	// 	  void *kbuf, size_t len, off_t pos, enum uio_rw rw
-	lock_acquire(curthread->fileTable[fd]->lk);
-	uio_kinit(&iov, &u, buf, len, curthread->fileTable[fd]->offset, UIO_READ);
+	lock_acquire(curproc->fileTable[fd]->lk);
+	uio_kinit(&iov, &u, buf, len, curproc->fileTable[fd]->offset, UIO_READ);
 	// u.uio_space = curproc->p_addrspace;
-	result = VOP_READ(curthread->fileTable[fd]->vn, &u);
+	result = VOP_READ(curproc->fileTable[fd]->vn, &u);
 	if(result){
 		kfree(buf);
-		lock_release(curthread->fileTable[fd]->lk);
+		lock_release(curproc->fileTable[fd]->lk);
 		return result;
 	}
 	result = copyout((const void *)buf, (userptr_t)buffer,len);
 	if(result){
 		kfree(buf);
-		lock_release(curthread->fileTable[fd]->lk);
+		lock_release(curproc->fileTable[fd]->lk);
 		return result;
 	}
 	kfree(buf);
-	curthread->fileTable[fd]->offset = u.uio_offset;
+	curproc->fileTable[fd]->offset = u.uio_offset;
 	*retval = len - u.uio_resid;
-	lock_release(curthread->fileTable[fd]->lk);
+	lock_release(curproc->fileTable[fd]->lk);
 	return 0;
 }
 
 int
 sys_close(int fd){
 	//EBADF
-	if(fd < 0 || fd >= OPEN_MAX || curthread->fileTable[fd] == NULL){
+	if(fd < 0 || fd >= OPEN_MAX || curproc->fileTable[fd] == NULL){
 		return EBADF;
 	}
-	lock_acquire(curthread->fileTable[fd]->lk);
-	if(curthread->fileTable[fd]->refcount > 1){
-		curthread->fileTable[fd]->refcount--;
-		lock_release(curthread->fileTable[fd]->lk);
-		curthread->fileTable[fd] = NULL;
+	lock_acquire(curproc->fileTable[fd]->lk);
+	if(curproc->fileTable[fd]->refcount > 1){
+		curproc->fileTable[fd]->refcount--;
+		lock_release(curproc->fileTable[fd]->lk);
+		curproc->fileTable[fd] = NULL;
 	}else{
-		vfs_close(curthread->fileTable[fd]->vn);
-		lock_release(curthread->fileTable[fd]->lk);
-		kfree(curthread->fileTable[fd]);
-		curthread->fileTable[fd] = NULL;
+		vfs_close(curproc->fileTable[fd]->vn);
+		lock_release(curproc->fileTable[fd]->lk);
+		kfree(curproc->fileTable[fd]);
+		curproc->fileTable[fd] = NULL;
 	}
 	return 0;
 }
 
 int
 sys___getcwd(char * buffer, size_t len, int * retval){
-	
-	size_t length;
 	if(buffer == NULL) {
 		return EFAULT;
 	}
@@ -290,16 +287,17 @@ sys___getcwd(char * buffer, size_t len, int * retval){
 	if(buf == NULL) {
 		return EFAULT;
 	}
-	result = copyinstr((userptr_t)buffer, buf, PATH_MAX, &length);
-        if(result){
-                kfree(buf);
-                return result;
-        }
+	size_t newlen;
+	result = copyinstr((const_userptr_t)buffer, buf, PATH_MAX, &newlen);
+	if(result){
+		kfree(buf);
+		return result;
+	}
 	struct iovec iov;
 	struct uio u;
 	// struct iovec *iov, struct uio *u,
 	// 	  void *kbuf, size_t len, off_t pos, enum uio_rw rw
-	uio_kinit(&iov, &u, (userptr_t)buf, len-1, 0, UIO_READ);
+	uio_kinit(&iov, &u, (userptr_t)buffer, len-1, 0, UIO_READ);
 	u.uio_segflg = UIO_USERSPACE;
 	u.uio_space = curproc->p_addrspace;
 	result = vfs_getcwd(&u);
@@ -307,8 +305,13 @@ sys___getcwd(char * buffer, size_t len, int * retval){
 		kfree(buf);
 		return result;
 	};
-	buffer[length-1 - u.uio_resid] = '\0';
-	*retval = strlen(buffer);
+	buffer[len-1 - u.uio_resid] = '\0';
+	// result = copyoutstr((const char *)buf, (userptr_t)buffer, len-u.uio_resid, &len);
+	// if(result){
+	// 	kfree(buf);
+	// 	return EINVAL;
+	// }
+	*retval = strlen(buf);
 	kfree(buf);
 	return 0;
 }
@@ -316,7 +319,7 @@ sys___getcwd(char * buffer, size_t len, int * retval){
 off_t
 sys_lseek(int fd, off_t pos, int whence, int64_t * retval){
 	//EBADF, EINVAL, ESPIPE
-	if(fd < 0 || fd >= OPEN_MAX || curthread->fileTable[fd] == NULL){
+	if(fd < 0 || fd >= OPEN_MAX || curproc->fileTable[fd] == NULL){
 		return EBADF;
 	}
 	// if(fd >=0 || fd <=2){
@@ -327,29 +330,29 @@ sys_lseek(int fd, off_t pos, int whence, int64_t * retval){
 	statbuf = (struct stat *)kmalloc(sizeof(struct stat));
 	off_t size, tmppos = 0;
 
-	lock_acquire(curthread->fileTable[fd]->lk);
-	if(!VOP_ISSEEKABLE(curthread->fileTable[fd]->vn)){
-		lock_release(curthread->fileTable[fd]->lk);
+	lock_acquire(curproc->fileTable[fd]->lk);
+	if(!VOP_ISSEEKABLE(curproc->fileTable[fd]->vn)){
+		lock_release(curproc->fileTable[fd]->lk);
 		return ESPIPE;
 	}
-	err = VOP_STAT(curthread->fileTable[fd]->vn, statbuf);
+	err = VOP_STAT(curproc->fileTable[fd]->vn, statbuf);
 	if(err){
-		lock_release(curthread->fileTable[fd]->lk);
+		lock_release(curproc->fileTable[fd]->lk);
 		return err;
 	}
 	size = statbuf->st_size;
 	if(whence == SEEK_SET){
 		tmppos = pos;
 	}else if(whence == SEEK_CUR){
-		tmppos = curthread->fileTable[fd]->offset + pos;
+		tmppos = curproc->fileTable[fd]->offset + pos;
 	}else if(whence == SEEK_END){
 		tmppos = size + pos;
 	}else{
-		lock_release(curthread->fileTable[fd]->lk);
+		lock_release(curproc->fileTable[fd]->lk);
 		return EINVAL;
 	}
 	if(tmppos < 0){
-		lock_release(curthread->fileTable[fd]->lk);
+		lock_release(curproc->fileTable[fd]->lk);
 		return EINVAL;
 	}
 	// if(whence != SEEK_SET || whence != SEEK_CUR || whence != SEEK_END){
@@ -357,14 +360,14 @@ sys_lseek(int fd, off_t pos, int whence, int64_t * retval){
 	// 	return EINVAL;
 	// }
 	*retval = (int64_t)tmppos;
-	curthread->fileTable[fd]->offset = tmppos;
-	lock_release(curthread->fileTable[fd]->lk);
+	curproc->fileTable[fd]->offset = tmppos;
+	lock_release(curproc->fileTable[fd]->lk);
 	return 0;
 }
 
 int
 sys_dup2(int oldfd, int newfd, int * retval){
-	if(oldfd < 0 || oldfd >= OPEN_MAX || curthread->fileTable[oldfd] == NULL){
+	if(oldfd < 0 || oldfd >= OPEN_MAX || curproc->fileTable[oldfd] == NULL){
 		return EBADF;
 	}
 
@@ -375,30 +378,30 @@ sys_dup2(int oldfd, int newfd, int * retval){
 		*retval = newfd;
 		return 0;
 	}
-	lock_acquire(curthread->fileTable[oldfd]->lk);
-	if(curthread->fileTable[newfd] == NULL){
-		curthread->fileTable[newfd] = (struct fileHandle *)kmalloc(sizeof(struct fileHandle));
+	lock_acquire(curproc->fileTable[oldfd]->lk);
+	if(curproc->fileTable[newfd] == NULL){
+		curproc->fileTable[newfd] = (struct fileHandle *)kmalloc(sizeof(struct fileHandle));
 		// KASSERT(fh != NULL);
-		if(curthread->fileTable[newfd] == NULL){
+		if(curproc->fileTable[newfd] == NULL){
 			return ENFILE;
 		}
-		curthread->fileTable[newfd] = curthread->fileTable[oldfd];
+		curproc->fileTable[newfd] = curproc->fileTable[oldfd];
 	}else{
 		sys_close(newfd);
-		if(curthread->fileTable[newfd] == NULL){
-			curthread->fileTable[newfd] = (struct fileHandle *)kmalloc(sizeof(struct fileHandle));
+		if(curproc->fileTable[newfd] == NULL){
+			curproc->fileTable[newfd] = (struct fileHandle *)kmalloc(sizeof(struct fileHandle));
 			// KASSERT(fh != NULL);
-			if(curthread->fileTable[newfd] == NULL){
+			if(curproc->fileTable[newfd] == NULL){
 				return ENFILE;
 			}
-			curthread->fileTable[newfd] = curthread->fileTable[oldfd];
+			curproc->fileTable[newfd] = curproc->fileTable[oldfd];
 		}else{
-			curthread->fileTable[newfd] = curthread->fileTable[oldfd];
+			curproc->fileTable[newfd] = curproc->fileTable[oldfd];
 		}
 
 	}
 	*retval = newfd;
-	lock_release(curthread->fileTable[oldfd]->lk);
+	lock_release(curproc->fileTable[oldfd]->lk);
 	return 0;
 }
 

@@ -118,7 +118,7 @@ struct thread {
 	 */
 
 	/* add more here as needed */
-	struct fileHandle * fileTable[OPEN_MAX];
+	// struct fileHandle * fileTable[OPEN_MAX];
 };
 
 /*

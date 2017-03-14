@@ -154,9 +154,9 @@ thread_create(const char *name)
 	thread->t_iplhigh_count = 1; /* corresponding to t_curspl */
 
 	/* If you add to struct thread, be sure to initialize here */
-	for(int i = 0; i<OPEN_MAX; i++){
-		thread->fileTable[i] = NULL;
-	}
+	// for(int i = 0; i<OPEN_MAX; i++){
+	// 	thread->fileTable[i] = NULL;
+	// }
 
 
 	return thread;

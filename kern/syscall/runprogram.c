@@ -60,7 +60,7 @@ runprogram(char *progname)
 	int result;
 
 	/* Open the file. */
-	if(curthread->fileTable[0] == NULL){
+	if(curproc->fileTable[0] == NULL){
 		result = fileTable_init();
 		if(result){
 		//	kprintf("fileTable init in runprogram error");
