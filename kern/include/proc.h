@@ -37,6 +37,9 @@
  */
 
 #include <spinlock.h>
+#include <synch.h>
+#include <types.h>
+#include <file_syscall.h>
 
 struct addrspace;
 struct thread;
@@ -71,7 +74,27 @@ struct proc {
 	struct vnode *p_cwd;		/* current working directory */
 
 	/* add more material here as needed */
+	// struct thread *p_thread;
+	pid_t p_PID;
+	pid_t p_PPID;
+	bool p_exit;
+	int p_exitcode;
+	struct semaphore * p_sem;
+	//lock / sem / cv. wait
+	struct fileHandle * fileTable[OPEN_MAX];
+
 };
+
+// struct procTable_list{
+// 	struct proc * head;
+// 	// int pt_size;
+// 	struct procTable_list * next;
+// };
+
+// extern proc_table_list * pt;
+// extern int pt_size;
+
+extern struct proc * procTable[PID_MAX];
 
 /* This is the process structure for the kernel and for kernel-only threads. */
 extern struct proc *kproc;

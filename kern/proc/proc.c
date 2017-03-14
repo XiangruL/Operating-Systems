@@ -48,12 +48,14 @@
 #include <current.h>
 #include <addrspace.h>
 #include <vnode.h>
+#include <thread.h>
+#include <kern/errno.h>
 
 /*
  * The process for the kernel; this holds all the kernel-only threads.
  */
 struct proc *kproc;
-
+struct proc *procTable[PID_MAX];
 /*
  * Create a proc structure.
  */
@@ -81,6 +83,41 @@ proc_create(const char *name)
 
 	/* VFS fields */
 	proc->p_cwd = NULL;
+
+	// //proc->fileTable
+	//
+	// int result = 0;
+	// result = fileTable_init();
+	// if(result){
+	// 	return NULL;
+	// }
+	//semaphore
+	proc->p_sem = sem_create("proc_sem", 1);
+	if(proc->p_sem == NULL){
+		kfree(proc->p_name);
+		kfree(proc);
+		return NULL;
+	}
+	// PID
+	int i = PID_MIN;
+	while(i < PID_MAX){
+		if(procTable[i] == NULL){
+			break;
+		}
+		i++;
+	}
+	if(i == PID_MAX){
+		return NULL;//ENPROC/EMPROC
+	}
+	procTable[i] = proc;
+	proc->p_PID = i;
+	proc->p_PPID = -1;
+	proc->p_exit = false;
+	proc->p_exitcode = -1;
+	//fileTable
+	for(i = 0;i<OPEN_MAX;i++){
+		proc->fileTable[i] = NULL;
+	}
 
 	return proc;
 }
