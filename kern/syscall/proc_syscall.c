@@ -20,7 +20,7 @@ int sys_fork(struct trapframe * tf, int * err){
     newtf = (struct trapframe *)kmalloc(sizeof(struct trapframe));
     if(newtf == NULL){
         *err = ENOMEM;
-        return 1;//
+        return -1;//
     }
     memcpy(newtf, tf, sizeof(struct trapframe));
 
