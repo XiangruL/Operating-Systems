@@ -6,7 +6,7 @@
 #include <addrspace.h>
 #include <kern/errno.h>
 #include <proc_syscall.h>
-
+#include <vnode.h>
 //#include <syscall.h>
 
 pid_t
@@ -16,7 +16,7 @@ sys_getpid(void){
 
 int sys_fork(struct trapframe * tf, int * err){
     //copy parent's tf to child's new trapframe
-    struct trapframe * newtf;
+    struct trapframe * newtf = NULL;
     newtf = (struct trapframe *)kmalloc(sizeof(struct trapframe));
     if(newtf == NULL){
         *err = ENOMEM;
@@ -24,14 +24,13 @@ int sys_fork(struct trapframe * tf, int * err){
     }
     memcpy(newtf, tf, sizeof(struct trapframe));
 
-    //create new proc, set child's PPID to parent's PID
+    // create new proc, set its PPID as parent's PID
     struct proc * newproc;
     newproc = proc_create_runprogram("child");
-    if(newproc == NULL){
-        kfree(newtf);
-       // as_destroy(newas);//now same as kfree(newas)
-        *err = ENOMEM;
-        return -1;
+    if (newproc == NULL) {
+	kfree(newtf);
+	*err = ENOMEM;
+	return -1;
     }
     newproc->p_PPID = curproc->p_PID;
 
@@ -46,14 +45,13 @@ int sys_fork(struct trapframe * tf, int * err){
     }
 
     /* copy filetable from proc to newproc
-	file handle is not null, increase reference num by 1 */ 
-    for(int fd=0;fd<OPEN_MAX;fd++)
-	{
+	file handle is not null, increase reference num by 1 */
+    for(int fd=0;fd<OPEN_MAX;fd++) {
         newproc->fileTable[fd] = curproc->fileTable[fd];
         if(newproc->fileTable[fd] != NULL){
 			newproc->fileTable[fd]->refcount++;
-		}
 	}
+    }
 
     // thread_fork do the remaining work
     result = thread_fork("test_thread_fork", newproc, entrypoint, newtf, (unsigned long) newas);//data1, data2
@@ -87,7 +85,6 @@ entrypoint(void *data1, unsigned long data2){
     // proc_setas(newas);
     curproc->p_addrspace = newas;
     as_activate();
-
     mips_usermode(&tf);
     // struct trapframe tf;
     //
@@ -101,4 +98,4 @@ entrypoint(void *data1, unsigned long data2){
 	// tf.tf_sp = stack;
     //
 	// mips_usermode(&tf);
-};
+}
