@@ -24,8 +24,19 @@ int sys_fork(struct trapframe * tf, int * err){
     }
     memcpy(newtf, tf, sizeof(struct trapframe));
 
+    //create new proc, set child's PPID to parent's PID
+    struct proc * newproc;
+    newproc = proc_create_runprogram("child");
+    if(newproc == NULL){
+        kfree(newtf);
+       // as_destroy(newas);//now same as kfree(newas)
+        *err = ENOMEM;
+        return -1;
+    }
+    newproc->p_PPID = curproc->p_PID;
+
     //copy parent's as to child's new addrspace
-    struct addrspace * newas;
+    struct addrspace *newas = newproc->p_addrspace;
     int result = 0;
     result = as_copy(curproc->p_addrspace, &newas);
     if(newas == NULL){
@@ -34,16 +45,6 @@ int sys_fork(struct trapframe * tf, int * err){
         return -1;
     }
 
-    //create new proc, set child's PPID to parent's PID
-    struct proc * newproc;
-    newproc = proc_create_runprogram("child");
-    if(newproc == NULL){
-        kfree(newtf);
-        as_destroy(newas);//now same as kfree(newas)
-        *err = ENOMEM;
-        return -1;
-    }
-    newproc->p_PPID = curproc->p_PID;
     /* copy filetable from proc to newproc
 	file handle is not null, increase reference num by 1 */ 
     for(int fd=0;fd<OPEN_MAX;fd++)
@@ -59,8 +60,10 @@ int sys_fork(struct trapframe * tf, int * err){
     if(result) {
         return result;
     }
+    result = newproc->p_PID;
+    newproc->p_cwd = curproc->p_cwd;
     curproc->p_numthreads++;
-    return 0;
+    return result;
 }
 
 void
