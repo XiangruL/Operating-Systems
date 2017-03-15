@@ -61,13 +61,16 @@ int sys_fork(struct trapframe * tf, int * retval){
     if(result) {
         return result;
     }
-    *retval = newproc->p_PID;//could panic if just return p_PID
     // spinlock_acquire(&curproc->p_lock);
 	// if (curproc->p_cwd != NULL) {
 	// 	VOP_INCREF(curproc->p_cwd);
 	// 	newproc->p_cwd = curproc->p_cwd;
 	// }
 	// spinlock_release(&curproc->p_lock);
+
+    *retval = newproc->p_PID;
+    newproc->p_cwd = curproc->p_cwd;
+    VOP_INCREF(curproc->p_cwd);
     curproc->p_numthreads++;
     return 0;
 }
