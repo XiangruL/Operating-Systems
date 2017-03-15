@@ -90,7 +90,7 @@ proc_create(const char *name)
 	// if(result){
 	// 	return NULL;
 	// }
-	
+
 	// PID
 	int i = PID_MIN;
 	while(i < PID_MAX){
@@ -218,8 +218,13 @@ proc_destroy(struct proc *proc)
 	}
 
 	KASSERT(proc->p_numthreads == 0);
+	// procTable[proc->p_PID] = NULL;
+	// for(int fd = 0; fd < OPEN_MAX; fd++){
+	// 	sys_close(fd);
+	// }
 	spinlock_cleanup(&proc->p_lock);
-
+	// lock_destroy(proc->p_lk);
+	// cv_destroy(proc->p_cv);
 	kfree(proc->p_name);
 	kfree(proc);
 }
