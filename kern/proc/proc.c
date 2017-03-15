@@ -59,6 +59,7 @@ struct proc *procTable[PID_MAX];
 /*
  * Create a proc structure.
  */
+static
 struct proc *
 proc_create(const char *name)
 {

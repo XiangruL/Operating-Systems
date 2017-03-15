@@ -175,9 +175,9 @@ syscall(struct trapframe *tf)
 
 		case SYS__exit:
 		sys__exit((int)tf->tf_a0);
-		panic("sys__exit failed");
+		panic("sys__exit failed in syscall.c");
 		break;
-		
+
 
 	    default:
 		kprintf("Unknown syscall %d\n", callno);
@@ -227,17 +227,18 @@ enter_forked_process(void *data1, unsigned long data2)
 {
 	struct trapframe *oldtf = data1;
 	struct trapframe newtfstack = *oldtf;
-	// memcpy(&newtfstack, oldtf, sizeof(struct trapframe));
-	(void)data2;
-	struct addrspace * newas = (struct addrspace*) data2;
-	proc_setas(newas);
-	// curproc->p_addrspace = newas;
-	as_activate();
-	kfree(oldtf);
-	oldtf = NULL;
+	memcpy(&newtfstack, oldtf, sizeof(struct trapframe));
 	newtfstack.tf_v0 = 0;
 	newtfstack.tf_a3 = 0;
 	newtfstack.tf_epc += 4;
+	kfree(oldtf);
+	oldtf = NULL;
+
+	struct addrspace * newas = (struct addrspace*) data2;
+	// proc_setas(newas);
+	curproc->p_addrspace = newas;
+	as_activate();
+
 	/* Make sure the syscall code didn't forget to lower spl */
 	KASSERT(curthread->t_curspl == 0);
 	/* ...or leak any spinlocks */

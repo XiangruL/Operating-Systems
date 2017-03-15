@@ -30,7 +30,7 @@ int sys_fork(struct trapframe * tf, int * retval){
     //copy parent's as to child's new addrspace
     struct addrspace * newas = NULL;
     int result = 0;
-    result = as_copy(curproc->p_addrspace, &newas);
+    result = as_copy(curproc->p_addrspace, &newas);//no need for as_create
     if(newas == NULL){
         kfree(newtf);
         return ENOMEM;
@@ -44,60 +44,30 @@ int sys_fork(struct trapframe * tf, int * retval){
         as_destroy(newas);//now same as kfree(newas)
         return ENOMEM;
     }
-    newproc->p_PPID = curproc->p_PID;
-    /* copy filetable from proc to newproc
-	file handle is not null, increase reference num by 1 */
-    for(int fd=0;fd<OPEN_MAX;fd++)
-	{
-        newproc->fileTable[fd] = curproc->fileTable[fd];
-        if(newproc->fileTable[fd] != NULL){
-			newproc->fileTable[fd]->refcount++;
-		}
-	}
-    // newproc->p_addrspace = newas;
 
+    // newproc->p_addrspace = newas;
+    newproc->p_PPID = curproc->p_PID;
     // thread_fork do the remaining work
     result = thread_fork("test_thread_fork", newproc, enter_forked_process, newtf, (unsigned long) newas);//data1, data2
     if(result) {
         return result;
     }
-    // spinlock_acquire(&curproc->p_lock);
-	// if (curproc->p_cwd != NULL) {
-	// 	VOP_INCREF(curproc->p_cwd);
-	// 	newproc->p_cwd = curproc->p_cwd;
-	// }
-	// spinlock_release(&curproc->p_lock);
 
+    /* MOVE into thread_fork: Copy filetable from proc to newproc
+	file handle is not null, increase reference num by 1 */
+    // for(int fd=0;fd<OPEN_MAX;fd++)
+	// {
+    //     newproc->fileTable[fd] = curproc->fileTable[fd];
+    //     if(newproc->fileTable[fd] != NULL){
+	// 		newproc->fileTable[fd]->refcount++;
+	// 	}
+	// }
     *retval = newproc->p_PID;
-    newproc->p_cwd = curproc->p_cwd;
-    VOP_INCREF(curproc->p_cwd);
-    curproc->p_numthreads++;
+    // newproc->p_cwd = curproc->p_cwd;
+    // VOP_INCREF(curproc->p_cwd);
+    // curproc->p_numthreads++;
     return 0;
 }
-
-// void
-// entrypoint(void *data1, unsigned long data2){
-//
-//     struct trapframe tf;
-//     // tf = (struct trapframe *)kmalloc(sizeof(struct trapframe));
-//     struct trapframe* newtf = (struct trapframe*) data1;
-//     struct addrspace* newas = (struct addrspace*) data2;
-//     tf.tf_v0 = 0;//retval
-//     tf.tf_a3 = 0;//return 0 = success
-//     tf.tf_epc += 4;
-//     /*
-//     *Upon syscall return, the PC stored in the trapframe (tf_epc) must
-//     *be incremented by 4 bytes, which is the length of one instruction.
-//     *Otherwise the return code restart at the same point.
-//     */
-//     memcpy(&tf, newtf, sizeof(struct trapframe));
-//     kfree(newtf);
-//     newtf = NULL;
-//     // proc_setas(newas);
-//     curproc->p_addrspace = newas;
-//     as_activate();
-//     mips_usermode(&tf);
-// }
 
 int sys_waitpid(pid_t pid, userptr_t status, int options, pid_t *retval) {
 	if(options != 0){
@@ -119,16 +89,18 @@ int sys_waitpid(pid_t pid, userptr_t status, int options, pid_t *retval) {
 	}
 
 	lock_acquire(p->p_lk);
-		while(!p->p_exit) {
-			cv_wait(p->p_cv, p->p_lk);
-		}
+	while(!p->p_exit) {
+		cv_wait(p->p_cv, p->p_lk);
+	}
 	lock_release(p->p_lk);
 
 	exitstatus = p->p_exitcode;
-	result = copyout((void *)&exitstatus, status, sizeof(int));
-	if (result) {
-		return result;
-	}
+    if(status != NULL){
+        result = copyout((void *)&exitstatus, status, sizeof(int));
+    	if (result) {
+    		return result;
+    	}
+    }
 
 	*retval = pid;
 	return 0;
@@ -139,14 +111,26 @@ void sys__exit(int exitcode) {
     // as_deactivate();
     // as_destroy(proc_getas());
     KASSERT(procTable[p->p_PID] != NULL);
-    proc_remthread(curthread);
+    // proc_remthread(curthread);
+    lock_acquire(p->p_lk);
     p->p_exit = true;
     p->p_exitcode = _MKWAIT_EXIT(exitcode);
-
-    lock_acquire(p->p_lk);
-    cv_broadcast(p->p_cv, p->p_lk);
-    lock_release(p->p_lk);
-    proc_destroy(p);
+    for (int fd = 0; fd < OPEN_MAX; fd++) {
+        sys_close(fd);
+    }
+    if(procTable[p->p_PPID]->p_exit == false){
+        cv_broadcast(p->p_cv, p->p_lk);
+        lock_release(p->p_lk);
+    }else{
+        lock_release(p->p_lk);
+        as_destroy(p->p_addrspace);
+        lock_destroy(p->p_lk);
+        cv_destroy(p->p_cv);
+        p->p_addrspace = NULL;
+        kfree(p->p_name);
+        procTable[curproc->p_PID] = NULL;
+    }
+    // proc_destroy(p);
     thread_exit();
-    panic("sys__exit--thread_exit failed");
+    panic("sys__exit failed in proc_syscall");
 }
