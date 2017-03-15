@@ -47,25 +47,27 @@ int sys_fork(struct trapframe * tf, int * retval){
 
     // newproc->p_addrspace = newas;
     newproc->p_PPID = curproc->p_PID;
+
+    /* MOVE into thread_fork: Copy filetable from proc to newproc
+	file handle is not null, increase reference num by 1 */
+    for(int fd=0;fd<OPEN_MAX;fd++)
+	{
+        newproc->fileTable[fd] = curproc->fileTable[fd];
+        if(newproc->fileTable[fd] != NULL){
+			newproc->fileTable[fd]->refcount++;
+		}
+	}
     // thread_fork do the remaining work
     result = thread_fork("test_thread_fork", newproc, enter_forked_process, newtf, (unsigned long) newas);//data1, data2
     if(result) {
         return result;
     }
 
-    /* MOVE into thread_fork: Copy filetable from proc to newproc
-	file handle is not null, increase reference num by 1 */
-    // for(int fd=0;fd<OPEN_MAX;fd++)
-	// {
-    //     newproc->fileTable[fd] = curproc->fileTable[fd];
-    //     if(newproc->fileTable[fd] != NULL){
-	// 		newproc->fileTable[fd]->refcount++;
-	// 	}
-	// }
+
     *retval = newproc->p_PID;
     // newproc->p_cwd = curproc->p_cwd;
     // VOP_INCREF(curproc->p_cwd);
-    // curproc->p_numthreads++;
+    curproc->p_numthreads++;
     return 0;
 }
 
@@ -93,15 +95,20 @@ int sys_waitpid(pid_t pid, userptr_t status, int options, pid_t *retval) {
 		cv_wait(p->p_cv, p->p_lk);
 	}
 	lock_release(p->p_lk);
-
-	exitstatus = p->p_exitcode;
+    exitstatus = p->p_exitcode;
     if(status != NULL){
         result = copyout((void *)&exitstatus, status, sizeof(int));
     	if (result) {
     		return result;
     	}
     }
-
+    as_destroy(p->p_addrspace);
+    lock_destroy(p->p_lk);
+    cv_destroy(p->p_cv);
+    p->p_addrspace = NULL;
+    kfree(p->p_name);
+    procTable[p->p_PID] = NULL;
+    
 	*retval = pid;
 	return 0;
 }
@@ -118,7 +125,7 @@ void sys__exit(int exitcode) {
     for (int fd = 0; fd < OPEN_MAX; fd++) {
         sys_close(fd);
     }
-    if(procTable[p->p_PPID]->p_exit == false){
+    if(procTable[p->p_PPID] != NULL && procTable[p->p_PPID]->p_exit == false){
         cv_broadcast(p->p_cv, p->p_lk);
         lock_release(p->p_lk);
     }else{
