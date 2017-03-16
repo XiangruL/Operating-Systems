@@ -71,7 +71,7 @@ int sys_fork(struct trapframe * tf, int * retval){
     return 0;
 }
 
-int sys_waitpid(pid_t pid, userptr_t status, int options, pid_t *retval) {
+int sys_waitpid(pid_t pid, int * status, int options, pid_t *retval) {
 	if(options != 0){
 		return EINVAL;
 	}
@@ -97,7 +97,7 @@ int sys_waitpid(pid_t pid, userptr_t status, int options, pid_t *retval) {
 	lock_release(p->p_lk);
     exitstatus = p->p_exitcode;
     if(status != NULL){
-        result = copyout((void *)&exitstatus, status, sizeof(int));
+        result = copyout((const void *)&exitstatus, (userptr_t)status, sizeof(int));
     	if (result) {
     		return result;
     	}

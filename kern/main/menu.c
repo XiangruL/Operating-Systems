@@ -48,6 +48,9 @@
 #include "opt-net.h"
 #include "opt-synchprobs.h"
 #include "opt-automationtest.h"
+#include <proc_syscall.h>
+#include <current.h>
+
 
 /*
  * In-kernel menu and command dispatcher.
@@ -95,9 +98,10 @@ cmd_progthread(void *ptr, unsigned long nargs)
 	if (result) {
 		kprintf("Running program %s failed: %s\n", args[0],
 			strerror(result));
+		sys__exit(result, false);
 		return;
 	}
-
+	sys__exit(result, false);
 	/* NOTREACHED: runprogram only returns on error. */
 }
 
@@ -128,7 +132,7 @@ common_prog(int nargs, char **args)
 	}
 
 	tc = thread_count;
-
+	proc->p_PPID = curproc->p_PID;
 	result = thread_fork(args[0] /* thread name */,
 			proc /* new process */,
 			cmd_progthread /* thread function */,
@@ -139,13 +143,19 @@ common_prog(int nargs, char **args)
 		return result;
 	}
 
+	int exitstatus = -1;
+	int retpid = -1;
+	result = sys_waitpid(proc->p_PID, &exitstatus, 0/*options*/, &retpid);
+	if(result){
+		return result;
+	}
 	/*
 	 * The new process will be destroyed when the program exits...
 	 * once you write the code for handling that.
 	 */
-
 	// Wait for all threads to finish cleanup, otherwise khu be a bit behind,
 	// especially once swapping is enabled.
+	sys__exit(exitstatus, false);
 	thread_wait_for_count(tc);
 
 	return 0;
