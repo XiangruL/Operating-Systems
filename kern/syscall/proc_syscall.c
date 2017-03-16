@@ -159,8 +159,6 @@ void sys__exit(int exitcode, bool trap_sig) {
 */
 int
 sys_execv(const char * program, char ** args){
-    (void)program;
-    (void)args;
     // one of the arguments is an invalid pointer
     if (program == NULL || args == NULL) {
 	return EFAULT;
