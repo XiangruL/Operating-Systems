@@ -177,48 +177,67 @@ sys_execv(const char * program, char ** args){
 	return EFAULT;
     }
     /***step1: copy argrs from user space into kernel buffer ***/
+
+
+    // while(args[args_count] != NULL) {
+	// args_count++;
+    // }
+
+    // kprintf("args_count: %d.\n", args_count);
+
+    // allocate memory for args named as copy
+
+    char ** copy = (char **)kmalloc(sizeof(char *) * 128);
+    // copy args
+    int result = 0;
     // count args num
     int args_count = 0;
-    while(args[args_count] != NULL) {
-	args_count++;
-    }
-    // kprintf("args_count: %d.\n", args_count);
-    // allocate memory for args named as copy
-    char ** copy = (char **)kmalloc(sizeof(char *) * args_count);
-    // copy args
-    int total_size = 0;
-    int result = 0;
-    for (int i = 0; i < args_count; i++) {
-        result = copyin((userptr_t)&(args[i]), &(copy[i]), sizeof(char *));
+    for (;; args_count++) {
+        result = copyin((userptr_t)&(args[args_count]), &(copy[args_count]), sizeof(char *));
     	if (result) {
             // kprintf("A");
     		return result;
     	}
+        if(copy[args_count] == NULL){
+            break;
+        }
     }
 
     // calculate padding size
     int total_len = (args_count + 1) * 4; // offset length
     char * kargs[args_count];
     size_t actual_size;
+
+    // int total_size = 0;
+
     for (int i = 0; i < args_count; i++) {
-    	kargs[i] = (char*)kmalloc(PATH_MAX);
-    	bzero(kargs[i], PATH_MAX);    // set \0
-    	result = copyinstr((userptr_t)copy[i], kargs[i], PATH_MAX, &actual_size);
+    	kargs[i] = (char *)kmalloc(sizeof(char ) * ARG_MAX);
+    	// bzero(kargs[i], ARG_MAX);    // set \0
+    	result = copyinstr((userptr_t)copy[i], kargs[i], ARG_MAX, &actual_size);
     	if (result) {
-            // kprintf("B");
+            kprintf("B\n");
     		return result;
     	}
     	// total_len = actual kargs[i] len + remainder
-    	total_len += strlen(kargs[i]) + 1 + (4 - (strlen(kargs[i]) + 1) % 4) % 4;
-        total_size += strlen(kargs[i]);
+        // if(i < args_count - 1){
+            total_len += strlen(kargs[i]) + 1 + (4 - (strlen(kargs[i]) + 1) % 4) % 4;
+        // }else{
+        //     total_len += strlen(kargs[i]) + (4 - strlen(kargs[i])%4)%4;
+        // }
+        // total_size += strlen(kargs[i]);
+        // kprintf("step %d, total: %d",i, total_size);
     }
     // total args num is greater than ARG_MAX
-    if (total_size > ARG_MAX) {
-	return E2BIG;
-    }
+    // if (total_len > ARG_MAX) {
+    //     // kprintf("A\n");
+    //     return E2BIG;
+    // }
     // padding
-    char kargs_pad[total_len];
-    bzero(kargs_pad, total_len);
+    char *kargs_pad = (char *)kmalloc(sizeof(char ) * total_len
+);//[total_len];
+
+
+    // bzero(kargs_pad, total_len);
     int offset = (args_count + 1) * 4;
 
     for (int i = 0; i < args_count; i++) {
@@ -236,7 +255,9 @@ sys_execv(const char * program, char ** args){
         // kprintf("C");
         return result;
     }
-
+    if(actual_size == 1){
+        return EINVAL;
+    }
     /** step 2 run_program**/
     struct addrspace *as;// = as_create();
     struct vnode *v;
