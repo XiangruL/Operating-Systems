@@ -182,6 +182,7 @@ sys_execv(const char * program, char ** args){
     while(args[args_count] != NULL) {
 	args_count++;
     }
+    // kprintf("args_count: %d.\n", args_count);
     // allocate memory for args named as copy
     char ** copy = (char **)kmalloc(sizeof(char *) * args_count);
     // copy args
@@ -189,28 +190,31 @@ sys_execv(const char * program, char ** args){
     int result = 0;
     for (int i = 0; i < args_count; i++) {
         result = copyin((userptr_t)&(args[i]), &(copy[i]), sizeof(char *));
-	if (result) {
-		return result;
-	}
-	total_size += strlen(copy[i]);
+    	if (result) {
+            // kprintf("A");
+    		return result;
+    	}
     }
-    // total args num is greater than ARG_MAX
-    if (total_size > ARG_MAX) {
-	return E2BIG;
-    }
+
     // calculate padding size
     int total_len = (args_count + 1) * 4; // offset length
     char * kargs[args_count];
     size_t actual_size;
     for (int i = 0; i < args_count; i++) {
-	kargs[i] = (char*)kmalloc(PATH_MAX);
-	bzero(kargs[i], PATH_MAX);    // set \0
-	result = copyinstr((userptr_t)copy[i], kargs[i], PATH_MAX, &actual_size);
-	if (result) {
-		return result;
-	}
-	// total_len = actual kargs[i] len + remainder
-	total_len += strlen(kargs[i]) + 1 + (4 - (strlen(kargs[i]) + 1) % 4) % 4;
+    	kargs[i] = (char*)kmalloc(PATH_MAX);
+    	bzero(kargs[i], PATH_MAX);    // set \0
+    	result = copyinstr((userptr_t)copy[i], kargs[i], PATH_MAX, &actual_size);
+    	if (result) {
+            // kprintf("B");
+    		return result;
+    	}
+    	// total_len = actual kargs[i] len + remainder
+    	total_len += strlen(kargs[i]) + 1 + (4 - (strlen(kargs[i]) + 1) % 4) % 4;
+        total_size += strlen(kargs[i]);
+    }
+    // total args num is greater than ARG_MAX
+    if (total_size > ARG_MAX) {
+	return E2BIG;
     }
     // padding
     char kargs_pad[total_len];
@@ -218,62 +222,70 @@ sys_execv(const char * program, char ** args){
     int offset = (args_count + 1) * 4;
 
     for (int i = 0; i < args_count; i++) {
-	((char **)kargs_pad)[i] = (char *)offset;
-	strcpy(&(kargs_pad[offset]), kargs[i]);
-	// move to new offset
-	offset += strlen(kargs[i]) + 1 + (4 - (strlen(kargs[i]) + 1) % 4) % 4;
+    	((char **)kargs_pad)[i] = (char *)offset;
+    	strcpy(&(kargs_pad[offset]), kargs[i]);
+    	// move to new offset
+    	offset += strlen(kargs[i]) + 1 + (4 - (strlen(kargs[i]) + 1) % 4) % 4;
     }
     ((char **) kargs_pad)[args_count] = NULL;
 
-   // copy program
-   char progname[PATH_MAX];
-   result = copyinstr((userptr_t)program, progname, PATH_MAX, &actual_size);
-   if (result) {
-	return result;
-   }
+    // copy program
+    char progname[PATH_MAX];
+    result = copyinstr((userptr_t)program, progname, PATH_MAX, &actual_size);
+    if (result) {
+        // kprintf("C");
+        return result;
+    }
 
-   /** step 2 run_program**/
-   struct addrspace *as;
-   struct vnode *v;
-   vaddr_t entry_point, stackptr;
-   result = vfs_open(progname, O_RDONLY, 0, &v);
-   if (result) {
-	return result;
-   }
-   as = as_create();
-   if (as == NULL) {
-	vfs_close(v);
-	return ENOMEM;
-   }
-   // switch to it and activate it
-   proc_setas(as);
-   as_activate();
-   // load the executable
-   result = load_elf(v, &entry_point);
-   if (result) {
-	vfs_close(v);
-	return result;
-   }
-   vfs_close(v);
+    /** step 2 run_program**/
+    struct addrspace *as;// = as_create();
+    struct vnode *v;
+    vaddr_t entry_point, stackptr;
+    result = vfs_open(progname, O_RDONLY, 0, &v);
+    if (result) {
+        // kprintf("D");
+        return result;
+    }
+    as = as_create();
+    if (as == NULL) {
+        vfs_close(v);
+        return ENOMEM;
+    }
+    // switch to it and activate it
+    proc_setas(as);
+    as_activate();
 
-   /** step 3 copy from kernel to userland **/
-   result = as_define_stack(as, &stackptr);
-   if (result) {
-	return result;
-   }
-   stackptr -= total_len; // point to the bottom
-   for (int i = 0; i < args_count; i++) {
-	((char **)kargs_pad)[i] += stackptr;
-   }
-   result = copyout(kargs_pad, (userptr_t)stackptr, total_len);
-   if (result) {
-	return result;
-   }
-   strcpy(curthread->t_name, kstrdup(progname));
+    // struct addrspace *oldas = curproc->p_addrspace;
+    // curproc->p_addrspace = as;
+    // load the executable
+    result = load_elf(v, &entry_point);
+    if (result) {
+        vfs_close(v);
+        // kprintf("E");
+        return result;
+    }
+    vfs_close(v);
 
-   /** step 4 enter new process **/
-   enter_new_process(args_count, (userptr_t)stackptr, NULL, stackptr, entry_point);
-   panic("execv should not return\n");
+    /** step 3 copy from kernel to userland **/
+    result = as_define_stack(as, &stackptr);
+    if (result) {
+        // kprintf("F");
+        return result;
+    }
+    stackptr -= total_len; // point to the bottom
+    for (int i = 0; i < args_count; i++) {
+    ((char **)kargs_pad)[i] += stackptr;
+    }
+    result = copyout(kargs_pad, (userptr_t)stackptr, total_len);
+    if (result) {
+        kprintf("G");
+        return result;
+    }
+    strcpy(curthread->t_name, kstrdup(progname));
+
+    /** step 4 enter new process **/
+    enter_new_process(args_count, (userptr_t)stackptr, NULL, stackptr, entry_point);
+    panic("execv should not return\n");
 
     return 0;
 }
