@@ -75,7 +75,11 @@ int sys_fork(struct trapframe * tf, int * retval){
 int sys_waitpid(pid_t pid, int * status, int options, pid_t *retval) {
 
     if(status != NULL){
-        if(status == (int*) 0x40000000 || status == (int*) 0x80000000 || ((int)status & 3) != 0) {
+        if(status == (int*) 0x40000000 || status == (int*) 0x80000000){
+            return EFAULT;
+        }
+
+        if(((int)status & 3) != 0) {
             return EFAULT;
         }
     }
@@ -168,6 +172,5 @@ sys_execv(const char * program, char ** args){
     (void)program;
     (void)args;
 
-    panic("execv should not return\n");
     return 0;
 }
