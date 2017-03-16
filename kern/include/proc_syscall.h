@@ -5,7 +5,7 @@
 
 int sys_getpid(pid_t * retval);
 int sys_fork(struct trapframe * tf, int * retval);
-int sys_waitpid(pid_t pid, userptr_t status, int options, pid_t *retval);
+int sys_waitpid(pid_t pid, int * status, int options, pid_t *retval);
 void sys__exit(int exitcode, bool trap_sig);
-
+int sys_execv(const char * program, char ** args);
 #endif
