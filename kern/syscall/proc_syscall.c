@@ -10,7 +10,8 @@
 #include <copyinout.h>
 #include <syscall.h>
 #include <kern/wait.h>
-
+#include <kern/fcntl.h>
+#include <vfs.h>
 
 int
 sys_getpid(pid_t * retval){
@@ -72,7 +73,14 @@ int sys_fork(struct trapframe * tf, int * retval){
 }
 
 int sys_waitpid(pid_t pid, int * status, int options, pid_t *retval) {
-	if(options != 0){
+
+    if(status != NULL){
+        if(status == (int*) 0x40000000 || status == (int*) 0x80000000 || ((int)status & 3) != 0) {
+            return EFAULT;
+        }
+    }
+
+    if(options != 0){
 		return EINVAL;
 	}
     if(pid < PID_MIN || pid >= PID_MAX){
@@ -159,5 +167,7 @@ int
 sys_execv(const char * program, char ** args){
     (void)program;
     (void)args;
+
+    panic("execv should not return\n");
     return 0;
 }

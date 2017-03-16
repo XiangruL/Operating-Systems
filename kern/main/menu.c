@@ -103,7 +103,7 @@ cmd_progthread(void *ptr, unsigned long nargs)
 		sys__exit(result, false);
 		return;
 	}
-	kprintf("cmd_progthread seems success before _exit");
+	// kprintf("cmd_progthread seems success before _exit");
 	sys__exit(result, false);
 	/* NOTREACHED: runprogram only returns on error. */
 }
@@ -159,9 +159,9 @@ common_prog(int nargs, char **args)
 	 */
 	// Wait for all threads to finish cleanup, otherwise khu be a bit behind,
 	// especially once swapping is enabled.
-	kprintf("common_prog seems success before _exit");
-	// sys__exit(exitstatus, false);
+	// kprintf("common_prog seems success before _exit");
 	thread_wait_for_count(tc);
+	// sys__exit(exitstatus, false);
 
 	return 0;
 }
