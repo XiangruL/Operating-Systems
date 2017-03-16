@@ -50,6 +50,8 @@
 #include "opt-automationtest.h"
 #include <proc_syscall.h>
 #include <current.h>
+#include <types.h>
+
 
 
 /*
@@ -101,6 +103,7 @@ cmd_progthread(void *ptr, unsigned long nargs)
 		sys__exit(result, false);
 		return;
 	}
+	kprintf("cmd_progthread seems success before _exit");
 	sys__exit(result, false);
 	/* NOTREACHED: runprogram only returns on error. */
 }
@@ -143,10 +146,11 @@ common_prog(int nargs, char **args)
 		return result;
 	}
 
-	int exitstatus = -1;
+ 	int exitstatus = -1;
 	int retpid = -1;
 	result = sys_waitpid(proc->p_PID, &exitstatus, 0/*options*/, &retpid);
 	if(result){
+		kprintf("sys_waitpid failed: %s\n", strerror(result));
 		return result;
 	}
 	/*
@@ -155,7 +159,8 @@ common_prog(int nargs, char **args)
 	 */
 	// Wait for all threads to finish cleanup, otherwise khu be a bit behind,
 	// especially once swapping is enabled.
-	sys__exit(exitstatus, false);
+	kprintf("common_prog seems success before _exit");
+	// sys__exit(exitstatus, false);
 	thread_wait_for_count(tc);
 
 	return 0;

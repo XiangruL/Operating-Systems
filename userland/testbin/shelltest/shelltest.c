@@ -61,7 +61,7 @@ main(int argc, char **argv)
 		snprintf(buf, 64, "line-%d: Able was i ere i saw elbA", i + 1);
 		secprintf(SECRET, buf, "/testbin/shelltest");
 	}
-
+	_exit(0);
 	// Expects exit() to work
 	return 0;
 }

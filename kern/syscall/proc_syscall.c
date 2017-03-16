@@ -67,7 +67,7 @@ int sys_fork(struct trapframe * tf, int * retval){
     *retval = newproc->p_PID;
     // newproc->p_cwd = curproc->p_cwd;
     // VOP_INCREF(curproc->p_cwd);
-    curproc->p_numthreads++;
+    curproc->p_numthreads++;//useless?
     return 0;
 }
 
@@ -78,8 +78,8 @@ int sys_waitpid(pid_t pid, int * status, int options, pid_t *retval) {
     if(pid < PID_MIN || pid >= PID_MAX){
         return ESRCH;
     }
-	int exitstatus;
-	int result;
+	// int exitstatus;
+	// int result;
 	struct proc * p = procTable[pid];
 
 	if(p == NULL){
@@ -95,12 +95,13 @@ int sys_waitpid(pid_t pid, int * status, int options, pid_t *retval) {
 		cv_wait(p->p_cv, p->p_lk);
 	}
 	lock_release(p->p_lk);
-    exitstatus = p->p_exitcode;
+    // exitstatus = p->p_exitcode;
     if(status != NULL){
-        result = copyout((const void *)&exitstatus, (userptr_t)status, sizeof(int));
-    	if (result) {
-    		return result;
-    	}
+        // result = copyout((const void *)&exitstatus, (userptr_t)status, sizeof(int));
+    	// if (result) {
+    	// 	return result;
+    	// }
+        *status = p->p_exitcode;
     }
     as_destroy(p->p_addrspace);
     lock_destroy(p->p_lk);
@@ -145,4 +146,18 @@ void sys__exit(int exitcode, bool trap_sig) {
     // proc_destroy(p);
     thread_exit();
     panic("sys__exit failed in proc_syscall");
+}
+
+/*
+*execv:
+*Copy arguments from user space into kernel buffer
+*Open the executable, create a new address space and load the elf into it
+*Copy the arguments from kernel buffer into user stack
+*Return user mode using enter_new_process
+*/
+int
+sys_execv(const char * program, char ** args){
+    (void)program;
+    (void)args;
+    return 0;
 }
