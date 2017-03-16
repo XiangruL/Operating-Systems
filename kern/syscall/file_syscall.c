@@ -270,6 +270,8 @@ sys_close(int fd){
 	}else{
 		vfs_close(curproc->fileTable[fd]->vn);
 		lock_release(curproc->fileTable[fd]->lk);
+		// vnode_cleanup(curproc->fileTable[fd]->vn);
+		lock_destroy(curproc->fileTable[fd]->lk);
 		kfree(curproc->fileTable[fd]);
 		curproc->fileTable[fd] = NULL;
 	}
@@ -385,7 +387,6 @@ sys_dup2(int oldfd, int newfd, int * retval){
 		if(curproc->fileTable[newfd] == NULL){
 			return ENFILE;
 		}
-		curproc->fileTable[newfd] = curproc->fileTable[oldfd];
 	}else{
 		sys_close(newfd);
 		if(curproc->fileTable[newfd] == NULL){
@@ -394,12 +395,10 @@ sys_dup2(int oldfd, int newfd, int * retval){
 			if(curproc->fileTable[newfd] == NULL){
 				return ENFILE;
 			}
-			curproc->fileTable[newfd] = curproc->fileTable[oldfd];
-		}else{
-			curproc->fileTable[newfd] = curproc->fileTable[oldfd];
 		}
-
 	}
+	curproc->fileTable[newfd] = curproc->fileTable[oldfd];
+	curproc->fileTable[oldfd]->refcount++;
 	*retval = newfd;
 	lock_release(curproc->fileTable[oldfd]->lk);
 	return 0;
