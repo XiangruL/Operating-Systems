@@ -108,12 +108,12 @@ int sys_waitpid(pid_t pid, userptr_t status, int options, pid_t *retval) {
     p->p_addrspace = NULL;
     kfree(p->p_name);
     procTable[p->p_PID] = NULL;
-    
+
 	*retval = pid;
 	return 0;
 }
 
-void sys__exit(int exitcode) {
+void sys__exit(int exitcode, bool trap_sig) {
     struct proc * p = curproc;
     // as_deactivate();
     // as_destroy(proc_getas());
@@ -121,7 +121,12 @@ void sys__exit(int exitcode) {
     // proc_remthread(curthread);
     lock_acquire(p->p_lk);
     p->p_exit = true;
-    p->p_exitcode = _MKWAIT_EXIT(exitcode);
+    // p->p_exitcode = _MKWAIT_EXIT(exitcode);
+    if(trap_sig){
+        p->p_exitcode = _MKWAIT_SIG(exitcode);
+    }else{
+        p->p_exitcode = _MKWAIT_EXIT(exitcode);
+    }
     for (int fd = 0; fd < OPEN_MAX; fd++) {
         sys_close(fd);
     }
