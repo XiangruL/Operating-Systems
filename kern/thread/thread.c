@@ -562,13 +562,13 @@ thread_fork(const char *name,
 	spinlock_release(&thread_count_lock);
 
 	//copy fileTable:
-	for(int fd=0;fd<OPEN_MAX;fd++)
-	{
-        newthread->t_proc->fileTable[fd] = curproc->fileTable[fd];
-        if(newthread->t_proc->fileTable[fd] != NULL){
-			newthread->t_proc->fileTable[fd]->refcount++;
-		}
-	}
+	// for(int fd=0;fd<OPEN_MAX;fd++)
+	// {
+    //     newthread->t_proc->fileTable[fd] = curproc->fileTable[fd];
+    //     if(newthread->t_proc->fileTable[fd] != NULL){
+	// 		newthread->t_proc->fileTable[fd]->refcount++;
+	// 	}
+	// }
 
 	/* Set up the switchframe so entrypoint() gets called */
 	switchframe_init(newthread, entrypoint, data1, data2);
