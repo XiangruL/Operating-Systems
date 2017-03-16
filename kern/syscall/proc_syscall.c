@@ -188,7 +188,7 @@ sys_execv(const char * program, char ** args){
     int total_size = 0;
     int result = 0;
     for (int i = 0; i < args_count; i++) {
-        result = copyin((userptr_t)&args[i], &(copy[i]), sizeof(char *));
+        result = copyin((userptr_t)&(args[i]), &(copy[i]), sizeof(char *));
 	if (result) {
 		return result;
 	}
@@ -205,7 +205,7 @@ sys_execv(const char * program, char ** args){
     for (int i = 0; i < args_count; i++) {
 	kargs[i] = (char*)kmalloc(PATH_MAX);
 	bzero(kargs[i], PATH_MAX);    // set \0
-	result = copyinstr((userptr_t)&copy[i], kargs[i], PATH_MAX, &actual_size);
+	result = copyinstr((userptr_t)copy[i], kargs[i], PATH_MAX, &actual_size);
 	if (result) {
 		return result;
 	}
