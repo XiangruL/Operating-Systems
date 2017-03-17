@@ -212,18 +212,14 @@ sys_execv(const char * program, char ** args){
 
     for (int i = 0; i < args_count; i++) {
     	kargs[i] = (char *)kmalloc(sizeof(char ) * ARG_MAX);
-    	// bzero(kargs[i], ARG_MAX);    // set \0
+    	bzero(kargs[i], ARG_MAX);    // set \0
     	result = copyinstr((userptr_t)copy[i], kargs[i], ARG_MAX, &actual_size);
     	if (result) {
             kprintf("B\n");
     		return result;
     	}
     	// total_len = actual kargs[i] len + remainder
-        // if(i < args_count - 1){
-            total_len += strlen(kargs[i]) + 1 + (4 - (strlen(kargs[i]) + 1) % 4) % 4;
-        // }else{
-        //     total_len += strlen(kargs[i]) + (4 - strlen(kargs[i])%4)%4;
-        // }
+    	total_len += strlen(kargs[i]) + 1 + (4 - (strlen(kargs[i]) + 1) % 4) % 4;
         // total_size += strlen(kargs[i]);
         // kprintf("step %d, total: %d",i, total_size);
     }
@@ -233,11 +229,8 @@ sys_execv(const char * program, char ** args){
     //     return E2BIG;
     // }
     // padding
-    char *kargs_pad = (char *)kmalloc(sizeof(char ) * total_len
-);//[total_len];
-
-
-    // bzero(kargs_pad, total_len);
+    char kargs_pad[total_len];
+    bzero(kargs_pad, total_len);
     int offset = (args_count + 1) * 4;
 
     for (int i = 0; i < args_count; i++) {
