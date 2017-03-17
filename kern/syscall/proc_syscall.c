@@ -121,7 +121,8 @@ int sys_waitpid(pid_t pid, int * status, int options, pid_t *retval) {
     p->p_addrspace = NULL;
     kfree(p->p_name);
     procTable[p->p_PID] = NULL;
-
+    kfree(p);
+    p = NULL;
 	*retval = pid;
 	return 0;
 }
@@ -154,6 +155,8 @@ void sys__exit(int exitcode, bool trap_sig) {
         p->p_addrspace = NULL;
         kfree(p->p_name);
         procTable[curproc->p_PID] = NULL;
+        kfree(p);
+        p = NULL;
     }
     // proc_destroy(p);
     thread_exit();
@@ -203,7 +206,7 @@ sys_execv(const char * program, char ** args){
 
     // calculate padding size
     int total_len = (args_count + 1) * 4; // offset length
-    char * kargs[128];
+    char * kargs[args_count];
     size_t actual_size;
 
     // int total_size = 0;
@@ -217,24 +220,15 @@ sys_execv(const char * program, char ** args){
     		return result;
     	}
     	// total_len = actual kargs[i] len + remainder
-
-        // if(i < args_count - 1){
         total_len += strlen(kargs[i]) + 1 + (4 - (strlen(kargs[i]) + 1) % 4) % 4;
-        // }else{
-        //     total_len += strlen(kargs[i]) + (4 - strlen(kargs[i])%4)%4;
-        // }
-        // total_size += strlen(kargs[i]);
-        // kprintf("step %d, total: %d",i, total_size);
     }
     // total args num is greater than ARG_MAX
-    if (total_len > ARG_MAX) {
-    //     // kprintf("A\n");
-         return E2BIG;
-    }
+    // if (total_len > ARG_MAX) {
+    //      return E2BIG;
+    // }
     // padding
-
-    //char *kargs_pad = (char *)kmalloc(sizeof(char ) * total_len);//[total_len];
-    char kargs_pad[total_len];
+    char *kargs_pad = (char *)kmalloc(sizeof(char ) * total_len);//[total_len];
+    // char kargs_pad[total_len];
     bzero(kargs_pad, total_len);
     int offset = (args_count + 1) * 4;
 
@@ -246,8 +240,17 @@ sys_execv(const char * program, char ** args){
     }
     ((char **) kargs_pad)[args_count] = NULL;
 
+    kfree(copy);
+    copy = NULL;
+    for(int i = args_count - 1; i >= 0; i--){
+        if(kargs[i] != NULL){
+            kfree(kargs[i]);
+            kargs[i] = NULL;
+        }
+    }
     // copy program
     char progname[PATH_MAX];
+    // char *progname = (char *)kmalloc(sizeof(char ) * NAME_MAX);
     result = copyinstr((userptr_t)program, progname, PATH_MAX, &actual_size);
     if (result) {
         // kprintf("C");
@@ -297,8 +300,12 @@ sys_execv(const char * program, char ** args){
     if (result) {
         return result;
     }
-    strcpy(curthread->t_name, kstrdup(progname));
+    // strcpy(curthread->t_name, kstrdup(progname));
 
+    kfree(kargs_pad);
+    kargs_pad = NULL;
+    // kfree(progname);
+    // progname = NULL;
     /** step 4 enter new process **/
     enter_new_process(args_count, (userptr_t)stackptr, NULL, stackptr, entry_point);
     panic("execv should not return\n");
