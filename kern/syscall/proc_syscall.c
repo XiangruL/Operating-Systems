@@ -155,8 +155,8 @@ void sys__exit(int exitcode, bool trap_sig) {
         p->p_addrspace = NULL;
         kfree(p->p_name);
         procTable[curproc->p_PID] = NULL;
-	kfree(p);
-	p = NULL;
+        kfree(p);
+        p = NULL;
     }
     // proc_destroy(p);
     thread_exit();
@@ -189,7 +189,7 @@ sys_execv(const char * program, char ** args){
 
     // allocate memory for args named as copy
 
-    char ** copy = (char **)kmalloc(sizeof(char *) * 500);
+    char ** copy = (char **)kmalloc(sizeof(char *) * 40000);
     // copy args
     int result = 0;
     // count args num
@@ -207,7 +207,7 @@ sys_execv(const char * program, char ** args){
 
     // calculate padding size
     int total_len = (args_count + 1) * 4; // offset length
-    char * kargs[128];
+    char * kargs[args_count];
     size_t actual_size;
 
     // int total_size = 0;
@@ -216,7 +216,7 @@ sys_execv(const char * program, char ** args){
 	r_size = strlen(copy[i]) + 1;
 	kargs[i] = (char *)kmalloc (sizeof(char) * r_size);
     	//kargs[i] = (char *)kmalloc(sizeof(char ) * ARG_MAX);
-   	bzero(kargs[i], r_size);    // set \0
+   	//bzero(kargs[i], ARG_MAX);    // set \0
     	result = copyinstr((userptr_t)copy[i], kargs[i], r_size, &actual_size);
     	if (result) {
 		kprintf("Bad here \n");
@@ -261,8 +261,17 @@ sys_execv(const char * program, char ** args){
     }
     ((char **) kargs_pad)[args_count] = NULL;
 
+    kfree(copy);
+    copy = NULL;
+    for(int i = args_count - 1; i >= 0; i--){
+        if(kargs[i] != NULL){
+            kfree(kargs[i]);
+            kargs[i] = NULL;
+        }
+    }
     // copy program
     char progname[PATH_MAX];
+    // char *progname = (char *)kmalloc(sizeof(char ) * NAME_MAX);
     result = copyinstr((userptr_t)program, progname, PATH_MAX, &actual_size);
     if (result) {
         // kprintf("C");
@@ -289,7 +298,7 @@ sys_execv(const char * program, char ** args){
     as_activate();
     //struct addrspace *old_as = as;
     // load the executable
-    
+
     result = load_elf(v, &entry_point);
     if (result) {
         vfs_close(v);
@@ -312,8 +321,12 @@ sys_execv(const char * program, char ** args){
     if (result) {
         return result;
     }
-    strcpy(curthread->t_name, kstrdup(progname));
+    // strcpy(curthread->t_name, kstrdup(progname));
 
+    kfree(kargs_pad);
+    kargs_pad = NULL;
+    // kfree(progname);
+    // progname = NULL;
     /** step 4 enter new process **/
     enter_new_process(args_count, (userptr_t)stackptr, NULL, stackptr, entry_point);
     panic("execv should not return\n");
