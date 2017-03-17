@@ -189,7 +189,7 @@ sys_execv(const char * program, char ** args){
 
     // allocate memory for args named as copy
 
-    char ** copy = (char **)kmalloc(sizeof(char *) * 40000);
+    char ** copy = (char **)kmalloc(sizeof(char *) * 4096);
     // copy args
     int result = 0;
     // count args num
@@ -207,16 +207,17 @@ sys_execv(const char * program, char ** args){
 
     // calculate padding size
     int total_len = (args_count + 1) * 4; // offset length
-    char * kargs[args_count];
+    // char * kargs[args_count];
+    char ** kargs = (char **)kmalloc(sizeof(char *) * args_count);
     size_t actual_size;
 
     // int total_size = 0;
 	int r_size = 0;
     for (int i = 0; i < args_count; i++) {
-	r_size = strlen(copy[i]) + 1;
-	kargs[i] = (char *)kmalloc (sizeof(char) * r_size);
+    	r_size = strlen(copy[i]) + 1;
+    	kargs[i] = (char *)kmalloc (sizeof(char) * r_size);
     	//kargs[i] = (char *)kmalloc(sizeof(char ) * ARG_MAX);
-   	//bzero(kargs[i], ARG_MAX);    // set \0
+   	    //bzero(kargs[i], ARG_MAX);    // set \0
     	result = copyinstr((userptr_t)copy[i], kargs[i], r_size, &actual_size);
     	if (result) {
 		kprintf("Bad here \n");
@@ -224,18 +225,13 @@ sys_execv(const char * program, char ** args){
     	}
     	// total_len = actual kargs[i] len + remainder
         // if(i < args_count - 1){
-//        total_len += strlen(kargs[i]) + 1 + (4 - (strlen(kargs[i]) + 1) % 4) % 4;
+        //        total_len += strlen(kargs[i]) + 1 + (4 - (strlen(kargs[i]) + 1) % 4) % 4;
         int t = (strlen(kargs[i]) + 1)%4;
         if (t != 0) {
                 t = 4 - t;
         }
         total_len = total_len + strlen(kargs[i]) + 1 + t;
 
-	// }else{
-        //     total_len += strlen(kargs[i]) + (4 - strlen(kargs[i])%4)%4;
-        // }
-        // total_size += strlen(kargs[i]);
-        // kprintf("step %d, total: %d",i, total_size);
     }
     // total args num is greater than ARG_MAX
     if (total_len > ARG_MAX) {
