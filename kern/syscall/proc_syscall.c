@@ -214,6 +214,10 @@ sys_execv(const char * program, char ** args){
     // int total_size = 0;
 	int r_size = 0;
     for (int i = 0; i < args_count; i++) {
+
+        if ((int *)(copy[i]) == (int *)0x80000000 || (int *)(copy[i]) == (int *)0x40000000) {
+    	       return EFAULT;
+        }
     	r_size = strlen(copy[i]) + 1;
     	kargs[i] = (char *)kmalloc (sizeof(char) * r_size);
     	//kargs[i] = (char *)kmalloc(sizeof(char ) * ARG_MAX);
