@@ -121,7 +121,8 @@ int sys_waitpid(pid_t pid, int * status, int options, pid_t *retval) {
     p->p_addrspace = NULL;
     kfree(p->p_name);
     procTable[p->p_PID] = NULL;
-
+    kfree(p);
+    p = NULL;
 	*retval = pid;
 	return 0;
 }
@@ -154,6 +155,8 @@ void sys__exit(int exitcode, bool trap_sig) {
         p->p_addrspace = NULL;
         kfree(p->p_name);
         procTable[curproc->p_PID] = NULL;
+	kfree(p);
+	p = NULL;
     }
     // proc_destroy(p);
     thread_exit();
@@ -186,7 +189,7 @@ sys_execv(const char * program, char ** args){
 
     // allocate memory for args named as copy
 
-    char ** copy = (char **)kmalloc(sizeof(char *) * 128);
+    char ** copy = (char **)kmalloc(sizeof(char *) * 500);
     // copy args
     int result = 0;
     // count args num
@@ -194,6 +197,7 @@ sys_execv(const char * program, char ** args){
     for (;; args_count++) {
         result = copyin((userptr_t)&(args[args_count]), &(copy[args_count]), sizeof(char *));
     	if (result) {
+		//kprintf("It's here!!!!\n");
     		return result;
     	}
         if(copy[args_count] == NULL){
@@ -207,19 +211,27 @@ sys_execv(const char * program, char ** args){
     size_t actual_size;
 
     // int total_size = 0;
-
+	int r_size = 0;
     for (int i = 0; i < args_count; i++) {
-    	kargs[i] = (char *)kmalloc(sizeof(char ) * PATH_MAX);
-    	bzero(kargs[i], PATH_MAX);    // set \0
-    	result = copyinstr((userptr_t)copy[i], kargs[i], PATH_MAX, &actual_size);
+	r_size = strlen(copy[i]) + 1;
+	kargs[i] = (char *)kmalloc (sizeof(char) * r_size);
+    	//kargs[i] = (char *)kmalloc(sizeof(char ) * ARG_MAX);
+   	bzero(kargs[i], r_size);    // set \0
+    	result = copyinstr((userptr_t)copy[i], kargs[i], r_size, &actual_size);
     	if (result) {
-           // kprintf("B\n");
+		kprintf("Bad here \n");
     		return result;
     	}
     	// total_len = actual kargs[i] len + remainder
         // if(i < args_count - 1){
-        total_len += strlen(kargs[i]) + 1 + (4 - (strlen(kargs[i]) + 1) % 4) % 4;
-        // }else{
+//        total_len += strlen(kargs[i]) + 1 + (4 - (strlen(kargs[i]) + 1) % 4) % 4;
+        int t = (strlen(kargs[i]) + 1)%4;
+        if (t != 0) {
+                t = 4 - t;
+        }
+        total_len = total_len + strlen(kargs[i]) + 1 + t;
+
+	// }else{
         //     total_len += strlen(kargs[i]) + (4 - strlen(kargs[i])%4)%4;
         // }
         // total_size += strlen(kargs[i]);
@@ -227,20 +239,25 @@ sys_execv(const char * program, char ** args){
     }
     // total args num is greater than ARG_MAX
     if (total_len > ARG_MAX) {
-    //     // kprintf("A\n");
+	//kprintf("It's here!!!!\n");
          return E2BIG;
     }
     // padding
-    //char *kargs_pad = (char *)kmalloc(sizeof(char ) * total_len);//[total_len];
-    char kargs_pad[total_len];
-    bzero(kargs_pad, total_len);
+    char *kargs_pad = (char *)kmalloc(sizeof(char) * total_len);//[total_len];
+    //char kargs_pad[total_len];
+    //bzero(kargs_pad, total_len);
     int offset = (args_count + 1) * 4;
 
     for (int i = 0; i < args_count; i++) {
     	((char **)kargs_pad)[i] = (char *)offset;
     	strcpy(&(kargs_pad[offset]), kargs[i]);
     	// move to new offset
-    	offset += strlen(kargs[i]) + 1 + (4 - (strlen(kargs[i]) + 1) % 4) % 4;
+	int temp = strlen(kargs[i]) + 1;
+	if (temp % 4 != 0) {
+		temp += 4 - temp % 4;
+	}
+	offset += temp;
+    	//offset += strlen(kargs[i]) + 1 + (4 - (strlen(kargs[i]) + 1) % 4) % 4;
     }
     ((char **) kargs_pad)[args_count] = NULL;
 
