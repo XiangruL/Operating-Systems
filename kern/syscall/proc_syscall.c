@@ -183,7 +183,6 @@ sys_execv(const char * program, char ** args){
 	// args_count++;
     // }
 
-    // kprintf("args_count: %d.\n", args_count);
 
     // allocate memory for args named as copy
 
@@ -195,7 +194,6 @@ sys_execv(const char * program, char ** args){
     for (;; args_count++) {
         result = copyin((userptr_t)&(args[args_count]), &(copy[args_count]), sizeof(char *));
     	if (result) {
-            // kprintf("A");
     		return result;
     	}
         if(copy[args_count] == NULL){
@@ -205,30 +203,37 @@ sys_execv(const char * program, char ** args){
 
     // calculate padding size
     int total_len = (args_count + 1) * 4; // offset length
-    char * kargs[args_count];
+    char * kargs[128];
     size_t actual_size;
 
     // int total_size = 0;
 
     for (int i = 0; i < args_count; i++) {
-    	kargs[i] = (char *)kmalloc(sizeof(char ) * ARG_MAX);
-    	bzero(kargs[i], ARG_MAX);    // set \0
-    	result = copyinstr((userptr_t)copy[i], kargs[i], ARG_MAX, &actual_size);
+    	kargs[i] = (char *)kmalloc(sizeof(char ) * PATH_MAX);
+    	bzero(kargs[i], PATH_MAX);    // set \0
+    	result = copyinstr((userptr_t)copy[i], kargs[i], PATH_MAX, &actual_size);
     	if (result) {
-            kprintf("B\n");
+           // kprintf("B\n");
     		return result;
     	}
     	// total_len = actual kargs[i] len + remainder
-    	total_len += strlen(kargs[i]) + 1 + (4 - (strlen(kargs[i]) + 1) % 4) % 4;
+
+        // if(i < args_count - 1){
+        total_len += strlen(kargs[i]) + 1 + (4 - (strlen(kargs[i]) + 1) % 4) % 4;
+        // }else{
+        //     total_len += strlen(kargs[i]) + (4 - strlen(kargs[i])%4)%4;
+        // }
         // total_size += strlen(kargs[i]);
         // kprintf("step %d, total: %d",i, total_size);
     }
     // total args num is greater than ARG_MAX
-    // if (total_len > ARG_MAX) {
+    if (total_len > ARG_MAX) {
     //     // kprintf("A\n");
-    //     return E2BIG;
-    // }
+         return E2BIG;
+    }
     // padding
+
+    //char *kargs_pad = (char *)kmalloc(sizeof(char ) * total_len);//[total_len];
     char kargs_pad[total_len];
     bzero(kargs_pad, total_len);
     int offset = (args_count + 1) * 4;
@@ -252,12 +257,11 @@ sys_execv(const char * program, char ** args){
         return EINVAL;
     }
     /** step 2 run_program**/
-    struct addrspace *as;// = as_create();
+    struct addrspace *as;
     struct vnode *v;
     vaddr_t entry_point, stackptr;
     result = vfs_open(progname, O_RDONLY, 0, &v);
     if (result) {
-        // kprintf("D");
         return result;
     }
     as = as_create();
@@ -268,31 +272,29 @@ sys_execv(const char * program, char ** args){
     // switch to it and activate it
     proc_setas(as);
     as_activate();
-
-    // struct addrspace *oldas = curproc->p_addrspace;
-    // curproc->p_addrspace = as;
+    //struct addrspace *old_as = as;
     // load the executable
+
     result = load_elf(v, &entry_point);
     if (result) {
         vfs_close(v);
-        // kprintf("E");
+	//curthread->p_addrspace = old_as;
         return result;
     }
+    //as_destroy(old_as);
     vfs_close(v);
 
     /** step 3 copy from kernel to userland **/
     result = as_define_stack(as, &stackptr);
     if (result) {
-        // kprintf("F");
         return result;
     }
     stackptr -= total_len; // point to the bottom
     for (int i = 0; i < args_count; i++) {
-    ((char **)kargs_pad)[i] += stackptr;
+        ((char **)kargs_pad)[i] += stackptr;
     }
     result = copyout(kargs_pad, (userptr_t)stackptr, total_len);
     if (result) {
-        kprintf("G");
         return result;
     }
     strcpy(curthread->t_name, kstrdup(progname));
