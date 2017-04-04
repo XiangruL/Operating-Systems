@@ -181,12 +181,6 @@ sys_execv(const char * program, char ** args){
     }
     /***step1: copy argrs from user space into kernel buffer ***/
 
-
-    // while(args[args_count] != NULL) {
-	// args_count++;
-    // }
-
-
     // allocate memory for args named as copy
 
     char ** copy = (char **)kmalloc(sizeof(char *) * 4096);
@@ -197,7 +191,6 @@ sys_execv(const char * program, char ** args){
     for (;; args_count++) {
         result = copyin((userptr_t)&(args[args_count]), &(copy[args_count]), sizeof(char *));
     	if (result) {
-		//kprintf("It's here!!!!\n");
     		return result;
     	}
         if(copy[args_count] == NULL){
@@ -224,7 +217,7 @@ sys_execv(const char * program, char ** args){
    	    //bzero(kargs[i], ARG_MAX);    // set \0
     	result = copyinstr((userptr_t)copy[i], kargs[i], r_size, &actual_size);
     	if (result) {
-		kprintf("Bad here \n");
+            kprintf("Bad here \n");
     		return result;
     	}
     	// total_len = actual kargs[i] len + remainder
@@ -239,24 +232,21 @@ sys_execv(const char * program, char ** args){
     }
     // total args num is greater than ARG_MAX
     if (total_len > ARG_MAX) {
-	//kprintf("It's here!!!!\n");
          return E2BIG;
     }
     // padding
-    char *kargs_pad = (char *)kmalloc(sizeof(char) * total_len);//[total_len];
-    //char kargs_pad[total_len];
-    //bzero(kargs_pad, total_len);
+    char *kargs_pad = (char *)kmalloc(sizeof(char) * total_len);
     int offset = (args_count + 1) * 4;
 
     for (int i = 0; i < args_count; i++) {
     	((char **)kargs_pad)[i] = (char *)offset;
     	strcpy(&(kargs_pad[offset]), kargs[i]);
     	// move to new offset
-	int temp = strlen(kargs[i]) + 1;
-	if (temp % 4 != 0) {
-		temp += 4 - temp % 4;
-	}
-	offset += temp;
+    	int temp = strlen(kargs[i]) + 1;
+    	if (temp % 4 != 0) {
+    		temp += 4 - temp % 4;
+    	}
+    	offset += temp;
     	//offset += strlen(kargs[i]) + 1 + (4 - (strlen(kargs[i]) + 1) % 4) % 4;
     }
     ((char **) kargs_pad)[args_count] = NULL;
@@ -322,7 +312,7 @@ sys_execv(const char * program, char ** args){
         return result;
     }
     // strcpy(curthread->t_name, kstrdup(progname));
-
+    
     kfree(kargs_pad);
     kargs_pad = NULL;
     // kfree(progname);
