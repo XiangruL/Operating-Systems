@@ -40,7 +40,10 @@ alloc_kpages(unsigned npages)
             pa = (i - npages + 1) * PAGE_SIZE;
             for(unsigned k = i - npages + 1; k <= i;k++){
                 coremap[k].cm_status = Dirty;
-                coremap[i].cm_size = PAGE_SIZE;
+                coremap[k].cm_size = PAGE_SIZE;
+                if(k == i - npages + 1){
+                    coremap[k].cm_len = npages;
+                }
             }
             spinlock_release(&coremap_lock);
             return PADDR_TO_KVADDR(pa);
@@ -62,9 +65,18 @@ free_kpages(vaddr_t addr)
 
     // synchronization
     spinlock_acquire(&coremap_lock);
-    coremap[index].cm_size = paddr1 % PAGE_SIZE;
-    if(coremap[index].cm_size == 0){
-        coremap[index].cm_status = Free;
+    if(coremap[index].cm_len == 1){
+        coremap[index].cm_size = paddr1 % PAGE_SIZE;
+        if(coremap[index].cm_size == 0){
+            coremap[index].cm_status = Free;
+            coremap[index].cm_len = 0;
+        }
+    }else if(coremap[index].cm_len > 1){
+        for(unsigned i = 0; i < coremap[index].cm_len; i++){
+            coremap[index + i].cm_status = Free;
+            coremap[index + i].cm_size = 0;
+        }
+        coremap[index].cm_len = 0;
     }
     spinlock_release(&coremap_lock);
 

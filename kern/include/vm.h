@@ -49,6 +49,7 @@ enum cm_status_t { Fixed, Clean, Dirty, Free};
 struct coremap_entry{
     enum cm_status_t cm_status;
     size_t cm_size;
+    unsigned cm_len;
     //cm_pid
 };
 
