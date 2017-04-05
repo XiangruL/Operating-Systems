@@ -44,6 +44,17 @@
 #define VM_FAULT_WRITE       1    /* A write was attempted */
 #define VM_FAULT_READONLY    2    /* A write to a readonly page was attempted*/
 
+enum cm_status_t { Fixed, Clean, Dirty, Free};
+
+struct coremap_entry{
+    enum cm_status_t cm_status;
+    size_t cm_size;
+    //cm_pid
+};
+
+paddr_t cm_addr;//extern
+
+struct coremap_entry * coremap;//extern
 
 /* Initialization function */
 void vm_bootstrap(void);
@@ -65,5 +76,6 @@ unsigned int coremap_used_bytes(void);
 /* TLB shootdown handling called from interprocessor_interrupt */
 void vm_tlbshootdown(const struct tlbshootdown *);
 
+void cm_init(void);
 
 #endif /* _VM_H_ */
