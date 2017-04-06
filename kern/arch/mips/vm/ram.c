@@ -167,7 +167,7 @@ void cm_init(void) {
 	}
 	for(int i = fixedPage; i < num; i++){
 		coremap[i].cm_status = Free;
-		coremap[i].cm_size = 0;
+		// coremap[i].cm_size = 0;
 		coremap[i].cm_len = 0;
 	}
 

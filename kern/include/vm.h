@@ -48,7 +48,11 @@ enum cm_status_t { Fixed, Clean, Dirty, Free};
 
 struct coremap_entry{
     enum cm_status_t cm_status;
-    size_t cm_size;
+    /*
+    *cm_size is not used under this circumstance.
+    *What free_kpages do is freeing all contiguous pages the vaddr point to, not freeing a portion of one page, which is subpage_kfree's job.
+    */
+    // size_t cm_size;
     unsigned cm_len;
     //cm_pid
 };
