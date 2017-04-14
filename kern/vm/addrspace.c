@@ -33,6 +33,15 @@
 #include <addrspace.h>
 #include <vm.h>
 #include <proc.h>
+#include <elf.h>
+#include <spl.h>
+#include <cpu.h>
+#include <spinlock.h>
+#include <proc.h>
+#include <current.h>
+#include <mips/tlb.h>
+
+#define DUMBVM_STACKPAGES    18
 
 /*
  * Note! If OPT_DUMBVM is set, as is the case until you start the VM
@@ -53,6 +62,9 @@ as_create(void)
 	/*
 	 * Initialize as needed.
 	 */
+	as->as_stackpbase = 0;
+	as->pageTable = NULL;
+	as->regionInfo = NULL;
 
 	return as;
 }
@@ -83,27 +95,45 @@ as_destroy(struct addrspace *as)
 	/*
 	 * Clean up as needed.
 	 */
+	struct pageTableNode * ptTmp = NULL;
+	while(as->pageTable != NULL){
+		ptTmp = as->pageTable->next;
+		as->pageTable->next = NULL;
+		kfree(as->pageTable);
+		as->pageTable = ptTmp;
+	}
 
+	struct regionInfoNode * riTmp = NULL;
+	while(as->regionInfo != NULL){
+		riTmp = as->regionInfo->next;
+		as->regionInfo->next = NULL;
+		kfree(as->regionInfo);
+		as->regionInfo = riTmp;
+	}
+	ptTmp = NULL;
+	riTmp = NULL;
 	kfree(as);
 }
 
 void
 as_activate(void)
 {
+	int i, spl;
 	struct addrspace *as;
 
 	as = proc_getas();
 	if (as == NULL) {
-		/*
-		 * Kernel thread without an address space; leave the
-		 * prior address space in place.
-		 */
 		return;
 	}
 
-	/*
-	 * Write this.
-	 */
+	/* Disable interrupts on this CPU while frobbing the TLB. */
+	spl = splhigh();
+
+	for (i=0; i<NUM_TLB; i++) {
+		tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
+	}
+
+	splx(spl);
 }
 
 void
@@ -130,17 +160,32 @@ int
 as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 		 int readable, int writeable, int executable)
 {
-	/*
-	 * Write this.
-	 */
+	size_t npages;
 
-	(void)as;
-	(void)vaddr;
-	(void)memsize;
-	(void)readable;
-	(void)writeable;
-	(void)executable;
-	return ENOSYS;
+	/* Align the region. First, the base... */
+	memsize += vaddr & ~(vaddr_t)PAGE_FRAME;
+	vaddr &= PAGE_FRAME;
+
+	/* ...and now the length. */
+	memsize = (memsize + PAGE_SIZE - 1) & PAGE_FRAME;
+
+	npages = memsize / PAGE_SIZE;
+
+	int permission = readable | writeable | executable;
+
+	struct regionInfoNode * tmp = (struct regionInfoNode*)kmalloc(sizeof(struct regionInfoNode));
+	if(tmp == NULL){
+        return ENOMEM;
+    }
+	tmp->as_vbase = vaddr;
+	tmp->as_npages = npages;
+	tmp->as_permission = permission;// code & data = readonly
+	tmp->as_tmp_permission = permission;
+	tmp->next = as->regionInfo;
+	as->regionInfo = tmp;
+	tmp = NULL;
+	return 0;
+
 }
 
 int
@@ -149,8 +194,17 @@ as_prepare_load(struct addrspace *as)
 	/*
 	 * Write this.
 	 */
-
-	(void)as;
+	// change all regions' permission to read & write
+	struct regionInfoNode * tmp = as->regionInfo;
+	while(tmp != NULL){
+		tmp->as_permission = PF_R | PF_W;
+		tmp = tmp->next;
+	}
+	tmp = NULL;
+	as->as_stackpbase = alloc_kpages(DUMBVM_STACKPAGES);
+	if (as->as_stackpbase == 0) {
+		return ENOMEM;
+	}
 	return 0;
 }
 
@@ -161,7 +215,12 @@ as_complete_load(struct addrspace *as)
 	 * Write this.
 	 */
 
-	(void)as;
+	 struct regionInfoNode * tmp = as->regionInfo;
+ 	while(tmp != NULL){
+ 		tmp->as_permission = tmp->as_tmp_permission;
+ 		tmp = tmp->next;
+ 	}
+	tmp = NULL;
 	return 0;
 }
 
@@ -172,11 +231,10 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 	 * Write this.
 	 */
 
-	(void)as;
+	KASSERT(as->as_stackpbase != 0);
 
 	/* Initial user-level stack pointer */
 	*stackptr = USERSTACK;
 
 	return 0;
 }
-
