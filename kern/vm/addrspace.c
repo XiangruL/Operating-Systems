@@ -82,7 +82,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	/*
 	 * Write this.
 	 */
-
+	panic("as_copy");
 	(void)old;
 
 	*ret = newas;
@@ -118,22 +118,23 @@ as_destroy(struct addrspace *as)
 void
 as_activate(void)
 {
-	int i, spl;
+	// int i, spl;
 	struct addrspace *as;
 
 	as = proc_getas();
 	if (as == NULL) {
 		return;
 	}
-
-	/* Disable interrupts on this CPU while frobbing the TLB. */
-	spl = splhigh();
-
-	for (i=0; i<NUM_TLB; i++) {
-		tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
-	}
-
-	splx(spl);
+	//
+	// /* Disable interrupts on this CPU while frobbing the TLB. */
+	// spl = splhigh();
+	//
+	// for (i=0; i<NUM_TLB; i++) {
+	// 	kprintf("%d",i);
+	// 	tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
+	// }
+	//
+	// splx(spl);
 }
 
 void

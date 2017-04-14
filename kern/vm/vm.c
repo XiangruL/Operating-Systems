@@ -208,6 +208,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			}
 			if(found == 1){
 				if(((ptTmp->pt_pas & PF_R) == PF_R && faulttype == VM_FAULT_READ) || ((ptTmp->pt_pas & PF_W) == PF_W && faulttype == VM_FAULT_WRITE)){
+					paddr1 = ptTmp->pt_pas & PAGE_FRAME;
 					//update TLB;
 				}else{
 					return EFAULT;
@@ -221,10 +222,10 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			    }
 				newpt->pt_vas = alloc_kpages(1);
 				newpt->pt_pas = newpt->pt_vas - MIPS_KSEG0;
+				paddr1 = newpt->pt_pas;
 				newpt->pt_pas |= tmp->as_tmp_permission;
 				newpt->next = as->pageTable;
 				as->pageTable = newpt;
-				paddr1 = newpt->pt_pas;
 			}
 
 		}else{
@@ -238,7 +239,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 		/* Disable interrupts on this CPU while frobbing the TLB. */
 		spl = splhigh();
-
 		for (i=0; i<NUM_TLB; i++) {
 			tlb_read(&ehi, &elo, i);
 			if (elo & TLBLO_VALID) {
@@ -246,13 +246,14 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			}
 			ehi = faultaddress;
 			elo = paddr1 | TLBLO_DIRTY | TLBLO_VALID;
-			// DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr);
+			// DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr1);
 			tlb_write(ehi, elo, i);
 			splx(spl);
+			// kprintf("%d\n",i);
 			return 0;
 		}
 		// fault or do sth..
-		// kprintf("3.2 vm: Ran out of TLB entries - cannot handle page fault\n");
+		panic("3.2 vm: Ran out of TLB entries - cannot handle page fault");
 		splx(spl);
 		return EFAULT;
 	}
