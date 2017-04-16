@@ -115,12 +115,27 @@ int sys_waitpid(pid_t pid, int * status, int options, pid_t *retval) {
     	// }
         *status = p->p_exitcode;
     }
-    as_destroy(p->p_addrspace);
+
+    // as_destroy(p->p_addrspace);
     lock_destroy(p->p_lk);
     cv_destroy(p->p_cv);
-    p->p_addrspace = NULL;
+    // p->p_addrspace = NULL;
     kfree(p->p_name);
     procTable[p->p_PID] = NULL;
+    if (p->p_addrspace) {
+
+        struct addrspace *as;
+
+        if (p == curproc) {
+            as = proc_setas(NULL);
+            as_deactivate();
+        }
+        else {
+            as = p->p_addrspace;
+            p->p_addrspace = NULL;
+        }
+        as_destroy(as);
+    }
     kfree(p);
     p = NULL;
 	*retval = pid;
@@ -149,12 +164,27 @@ void sys__exit(int exitcode, bool trap_sig) {
         lock_release(p->p_lk);
     }else{
         lock_release(p->p_lk);
-        as_destroy(p->p_addrspace);
+
+        // as_destroy(p->p_addrspace);
         lock_destroy(p->p_lk);
         cv_destroy(p->p_cv);
-        p->p_addrspace = NULL;
+        // p->p_addrspace = NULL;
         kfree(p->p_name);
         procTable[curproc->p_PID] = NULL;
+        if (p->p_addrspace) {
+
+            struct addrspace *as;
+
+            if (p == curproc) {
+                as = proc_setas(NULL);
+                as_deactivate();
+            }
+            else {
+                as = p->p_addrspace;
+                p->p_addrspace = NULL;
+            }
+            as_destroy(as);
+        }
         kfree(p);
         p = NULL;
     }
@@ -312,7 +342,7 @@ sys_execv(const char * program, char ** args){
         return result;
     }
     // strcpy(curthread->t_name, kstrdup(progname));
-    
+
     kfree(kargs_pad);
     kargs_pad = NULL;
     // kfree(progname);

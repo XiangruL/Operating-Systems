@@ -117,6 +117,7 @@ as_destroy(struct addrspace *as)
 		// kprintf("%d\n", i++);
 		kfree(ptTmp2);
 	}
+	as->pageTable = NULL;
 
 	struct regionInfoNode * riTmp = as->regionInfo;
 	struct regionInfoNode * riTmp2 = NULL;
@@ -125,6 +126,8 @@ as_destroy(struct addrspace *as)
 		riTmp = riTmp->next;
 		kfree(riTmp2);
 	}
+	as->regionInfo = NULL;
+
 	kfree(as);
 }
 
