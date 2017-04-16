@@ -111,8 +111,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 {
 	vaddr_t vbase, vtop, stackbase, stacktop;
 	paddr_t paddr1 = 0x0;
-	int i;
-	uint32_t ehi, elo;
 	struct addrspace *as;
 	int spl;
 
@@ -210,7 +208,8 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		}
 		newpt->pt_vas = faultaddress & PAGE_FRAME;
 		vaddr_t vaddr_tmp = alloc_kpages(1);
-		if(vaddr_tmp){
+		// kprintf("%x\n", vaddr_tmp);
+		if(vaddr_tmp == 0){
 			return ENOMEM;
 		}
 		newpt->pt_pas = vaddr_tmp - MIPS_KSEG0;
@@ -228,24 +227,12 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	//update TLB
 	/* make sure it's page-aligned */
 	KASSERT((paddr1 & PAGE_FRAME) == paddr1);
-
+	uint32_t ehi, elo;
 	/* Disable interrupts on this CPU while frobbing the TLB. */
 	spl = splhigh();
-	for (i=0; i<NUM_TLB; i++) {
-		tlb_read(&ehi, &elo, i);
-		if (elo & TLBLO_VALID) {
-			continue;
-		}
-		ehi = faultaddress;
-		elo = paddr1 | TLBLO_DIRTY | TLBLO_VALID;
-		// DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr1);
-		tlb_write(ehi, elo, i);
-		splx(spl);
-		// kprintf("%d\n",i);
-		return 0;
-	}
-	// fault or do sth..
-	panic("3.2 vm: Ran out of TLB entries - cannot handle page fault");
+	ehi = faultaddress;
+	elo = paddr1 | TLBLO_DIRTY | TLBLO_VALID;
+	tlb_random(ehi, elo);
 	splx(spl);
-	return EFAULT;
+	return 0;
 }
