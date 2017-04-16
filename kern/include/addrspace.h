@@ -76,7 +76,11 @@ struct addrspace {
 #else
         struct pageTableNode *pageTable;//head
         struct regionInfoNode *regionInfo;//head
-        paddr_t as_stackpbase;/* Put stuff here for your VM system */
+        vaddr_t heap_vbase;
+        vaddr_t heap_vbound;
+        // paddr_t as_stackpbase;
+
+        /* Put stuff here for your VM system */
 #endif
 };
 

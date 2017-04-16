@@ -41,7 +41,7 @@
 #include <current.h>
 #include <mips/tlb.h>
 
-#define DUMBVM_STACKPAGES    18
+#define VM_STACKPAGES    1024
 
 /*
  * Note! If OPT_DUMBVM is set, as is the case until you start the VM
@@ -62,10 +62,10 @@ as_create(void)
 	/*
 	 * Initialize as needed.
 	 */
-	as->as_stackpbase = 0;
 	as->pageTable = NULL;
 	as->regionInfo = NULL;
-
+	as->heap_vbase = 0;
+	as->heap_vbound = 0;
 	return as;
 }
 
@@ -82,7 +82,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	/*
 	 * Write this.
 	 */
-	panic("as_copy");
+	panic("as_copy not implemented");
 	(void)old;
 
 	*ret = newas;
@@ -95,46 +95,44 @@ as_destroy(struct addrspace *as)
 	/*
 	 * Clean up as needed.
 	 */
-	struct pageTableNode * ptTmp = NULL;
-	while(as->pageTable != NULL){
-		ptTmp = as->pageTable->next;
-		as->pageTable->next = NULL;
-		kfree(as->pageTable);
-		as->pageTable = ptTmp;
+	struct pageTableNode * ptTmp = as->pageTable;
+	struct pageTableNode * ptTmp2 = NULL;
+	while(ptTmp != NULL){
+		ptTmp2 = ptTmp->next;
+		kfree(ptTmp);
+		ptTmp = ptTmp2;
 	}
 
-	struct regionInfoNode * riTmp = NULL;
-	while(as->regionInfo != NULL){
-		riTmp = as->regionInfo->next;
-		as->regionInfo->next = NULL;
-		kfree(as->regionInfo);
-		as->regionInfo = riTmp;
+	struct regionInfoNode * riTmp = as->regionInfo;
+	struct regionInfoNode * riTmp2 = NULL;
+	while(riTmp != NULL){
+		riTmp2 = riTmp->next;
+		kfree(riTmp);
+		riTmp = riTmp2;
 	}
-	ptTmp = NULL;
-	riTmp = NULL;
 	kfree(as);
 }
 
 void
 as_activate(void)
 {
-	// int i, spl;
+	int i, spl;
 	struct addrspace *as;
 
 	as = proc_getas();
 	if (as == NULL) {
 		return;
 	}
-	//
-	// /* Disable interrupts on this CPU while frobbing the TLB. */
-	// spl = splhigh();
-	//
-	// for (i=0; i<NUM_TLB; i++) {
-	// 	kprintf("%d",i);
-	// 	tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
-	// }
-	//
-	// splx(spl);
+
+	/* Disable interrupts on this CPU while frobbing the TLB. */
+	spl = splhigh();
+
+	for (i=0; i<NUM_TLB; i++) {
+		// kprintf("%d",i);
+		tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
+	}
+
+	splx(spl);
 }
 
 void
@@ -182,9 +180,17 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 	tmp->as_npages = npages;
 	tmp->as_permission = permission;// code & data = readonly
 	tmp->as_tmp_permission = permission;
-	tmp->next = as->regionInfo;
-	as->regionInfo = tmp;
-	tmp = NULL;
+	tmp->next = NULL;
+	if(as->regionInfo == NULL){
+		as->regionInfo = tmp;
+	}else{
+		tmp->next = as->regionInfo->next;
+		as->regionInfo->next = tmp;
+	}
+	if(as->heap_vbase < tmp->as_vbase + tmp->as_npages * PAGE_SIZE){
+		as->heap_vbase = tmp->as_vbase + tmp->as_npages * PAGE_SIZE;
+		as->heap_vbound = tmp->as_vbase + tmp->as_npages * PAGE_SIZE;
+	}
 	return 0;
 
 }
@@ -202,10 +208,10 @@ as_prepare_load(struct addrspace *as)
 		tmp = tmp->next;
 	}
 	tmp = NULL;
-	as->as_stackpbase = alloc_kpages(DUMBVM_STACKPAGES);
-	if (as->as_stackpbase == 0) {
-		return ENOMEM;
-	}
+	// as->as_stackpbase = alloc_kpages(VM_STACKPAGES);
+	// if (as->as_stackpbase == 0) {
+	// 	return ENOMEM;
+	// }
 	return 0;
 }
 
@@ -231,10 +237,7 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 	/*
 	 * Write this.
 	 */
-
-	KASSERT(as->as_stackpbase != 0);
-
-	/* Initial user-level stack pointer */
+	(void)as;
 	*stackptr = USERSTACK;
 
 	return 0;

@@ -11,7 +11,7 @@
 #include <vm.h>
 #include <elf.h>
 
-#define DUMBVM_STACKPAGES    18
+#define VM_STACKPAGES    1024
 
 /*
  * Wrap ram_stealmem in a spinlock.
@@ -99,6 +99,13 @@ vm_tlbshootdown(const struct tlbshootdown *ts)
 	panic("dumbvm tried to do tlb shootdown?!\n");
 }
 
+static
+void
+as_zero_region(paddr_t paddr, unsigned npages)
+{
+	bzero((void *)PADDR_TO_KVADDR(paddr), npages * PAGE_SIZE);
+}
+
 int
 vm_fault(int faulttype, vaddr_t faultaddress)
 {
@@ -111,12 +118,10 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	faultaddress &= PAGE_FRAME;
 
-	DEBUG(DB_VM, "3.2 vm: fault: 0x%x\n", faultaddress);
-
 	switch (faulttype) {
 	    case VM_FAULT_READONLY:
 		/* We always create pages read-write, so we can't get this */
-		panic("dumbvm: got VM_FAULT_READONLY\n");
+		panic("vm: got VM_FAULT_READONLY\n");
 	    case VM_FAULT_READ://0x0
 	    case VM_FAULT_WRITE://0x1
 		break;
@@ -144,119 +149,103 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	/* Assert that the address space has been set up properly. */
 
+	// faultaddress should belong to one regions
 
-	// stack:
-
-	KASSERT(as->as_stackpbase != 0);
-	KASSERT((as->as_stackpbase & PAGE_FRAME) == as->as_stackpbase);
-	stackbase = USERSTACK - DUMBVM_STACKPAGES * PAGE_SIZE;
+	stackbase = USERSTACK - VM_STACKPAGES * PAGE_SIZE;
 	stacktop = USERSTACK;
-
-	if(faultaddress >= stackbase && faultaddress < stacktop){
-		//do ..
-		paddr1 = (faultaddress - stackbase) + as->as_stackpbase;
-
-
-		//TLB update
-		/* make sure it's page-aligned */
-		KASSERT((paddr1 & PAGE_FRAME) == paddr1);
-
-		/* Disable interrupts on this CPU while frobbing the TLB. */
-		spl = splhigh();
-
-		for (i=0; i<NUM_TLB; i++) {
-			tlb_read(&ehi, &elo, i);
-			if (elo & TLBLO_VALID) {
-				continue;
-			}
-			ehi = faultaddress;
-			elo = paddr1 | TLBLO_DIRTY | TLBLO_VALID;
-			// DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr);
-			tlb_write(ehi, elo, i);
-			splx(spl);
-			return 0;
-		}
-		// fault or do sth..
-		// kprintf("dumbvm: Ran out of TLB entries - cannot handle page fault\n");
-		splx(spl);
+	if(faultaddress >= stacktop){
 		return EFAULT;
 	}
-
+	if(faultaddress >= as->heap_vbound && faultaddress < stackbase){
+		return EFAULT;
+	}
+	// stack or heap:
+	// do nothing in this step and skip to create new pte.
 	// non-stack:
 
 	struct regionInfoNode * tmp = as->regionInfo;
-	while(tmp != NULL){
-		//KASSERT
-		KASSERT(tmp->as_vbase != 0);
-		KASSERT((tmp->as_vbase & PAGE_FRAME) == tmp->as_vbase);
-		//base & bounds
-		// if...do...else ...continue
-		vbase = tmp->as_vbase;
-		vtop = vbase + tmp->as_npages * PAGE_SIZE;
-		if(faultaddress >= vbase && faultaddress < vtop){
-			//workflow:......
-			//skip regionInfo permission
-			//
-			struct pageTableNode * ptTmp = as->pageTable;
-			bool found = 0;
-			while(ptTmp != NULL){
-				if(ptTmp->pt_vas == faultaddress){
-					found = 1;
-					break;
-				}
-				ptTmp = ptTmp->next;
-			}
-			if(found == 1){
-				if(((ptTmp->pt_pas & PF_R) == PF_R && faulttype == VM_FAULT_READ) || ((ptTmp->pt_pas & PF_W) == PF_W && faulttype == VM_FAULT_WRITE)){
-					paddr1 = ptTmp->pt_pas & PAGE_FRAME;
-					//update TLB;
-				}else{
-					return EFAULT;
-				}
+	//faultaddress should be only in non-stack non-heap regions.
+	if(faultaddress < as->heap_vbound){
+		while(tmp != NULL){
+			//KASSERT
+			KASSERT(tmp->as_vbase != 0);
+			KASSERT((tmp->as_vbase & PAGE_FRAME) == tmp->as_vbase);
+			//base & bounds
+			vbase = tmp->as_vbase;
+			vtop = vbase + tmp->as_npages * PAGE_SIZE;
+			if(faultaddress >= vbase && faultaddress < vtop){
+				break;
 			}else{
-				//create
-				struct pageTableNode * newpt;
-				newpt = (struct pageTableNode *)kmalloc(sizeof(struct pageTableNode));
-				if(newpt == NULL){
-			        return ENOMEM;
-			    }
-				newpt->pt_vas = alloc_kpages(1);
-				newpt->pt_pas = newpt->pt_vas - MIPS_KSEG0;
-				paddr1 = newpt->pt_pas;
-				newpt->pt_pas |= tmp->as_tmp_permission;
-				newpt->next = as->pageTable;
-				as->pageTable = newpt;
+				tmp = tmp->next;
 			}
-
-		}else{
-			tmp = tmp->next;
-			continue;
 		}
-
-		//TLB update
-		/* make sure it's page-aligned */
-		KASSERT((paddr1 & PAGE_FRAME) == paddr1);
-
-		/* Disable interrupts on this CPU while frobbing the TLB. */
-		spl = splhigh();
-		for (i=0; i<NUM_TLB; i++) {
-			tlb_read(&ehi, &elo, i);
-			if (elo & TLBLO_VALID) {
-				continue;
-			}
-			ehi = faultaddress;
-			elo = paddr1 | TLBLO_DIRTY | TLBLO_VALID;
-			// DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr1);
-			tlb_write(ehi, elo, i);
-			splx(spl);
-			// kprintf("%d\n",i);
-			return 0;
+		if(tmp == NULL){
+			return EFAULT;// invalid faultaddress
 		}
-		// fault or do sth..
-		panic("3.2 vm: Ran out of TLB entries - cannot handle page fault");
-		splx(spl);
-		return EFAULT;
 	}
 
-	return EFAULT;//segment fault
+	struct pageTableNode * ptTmp = as->pageTable;
+	bool found = 0;
+	while(ptTmp != NULL){
+		if(ptTmp->pt_vas == (faultaddress & PAGE_FRAME)){
+			found = 1;
+			break;
+		}
+		ptTmp = ptTmp->next;
+	}
+
+	if(found == 1){
+		if(((ptTmp->pt_pas & PF_R) == PF_R && faulttype == VM_FAULT_READ) || ((ptTmp->pt_pas & PF_W) == PF_W && faulttype == VM_FAULT_WRITE)){
+			paddr1 = ptTmp->pt_pas & PAGE_FRAME;
+			//update TLB;
+		}else{
+			return EFAULT;
+		}
+	}else{
+		//create
+		struct pageTableNode * newpt;
+		newpt = (struct pageTableNode *)kmalloc(sizeof(struct pageTableNode));
+		if(newpt == NULL){
+			return ENOMEM;
+		}
+		newpt->pt_vas = faultaddress & PAGE_FRAME;
+		vaddr_t vaddr_tmp = alloc_kpages(1);
+		if(vaddr_tmp){
+			return ENOMEM;
+		}
+		newpt->pt_pas = vaddr_tmp - MIPS_KSEG0;
+		paddr1 = newpt->pt_pas;
+		as_zero_region(paddr1, 1);
+		newpt->pt_pas |= tmp->as_tmp_permission;
+		if(as->pageTable == NULL){
+			as->pageTable = newpt;
+		}else{
+			newpt->next = as->pageTable->next;
+			as->pageTable->next = newpt;
+		}
+	}
+
+	//update TLB
+	/* make sure it's page-aligned */
+	KASSERT((paddr1 & PAGE_FRAME) == paddr1);
+
+	/* Disable interrupts on this CPU while frobbing the TLB. */
+	spl = splhigh();
+	for (i=0; i<NUM_TLB; i++) {
+		tlb_read(&ehi, &elo, i);
+		if (elo & TLBLO_VALID) {
+			continue;
+		}
+		ehi = faultaddress;
+		elo = paddr1 | TLBLO_DIRTY | TLBLO_VALID;
+		// DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr1);
+		tlb_write(ehi, elo, i);
+		splx(spl);
+		// kprintf("%d\n",i);
+		return 0;
+	}
+	// fault or do sth..
+	panic("3.2 vm: Ran out of TLB entries - cannot handle page fault");
+	splx(spl);
+	return EFAULT;
 }
