@@ -74,8 +74,8 @@ struct addrspace {
         size_t as_npages2;
         paddr_t as_stackpbase;
 #else
-        struct pageTableNode *pageTable;//head
-        struct regionInfoNode *regionInfo;//head
+        struct pageTableNode *pageTable;
+        struct regionInfoNode *regionInfo;
         vaddr_t heap_vbase;
         vaddr_t heap_vbound;
         // paddr_t as_stackpbase;

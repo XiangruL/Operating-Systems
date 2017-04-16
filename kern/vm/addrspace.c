@@ -41,7 +41,7 @@
 #include <current.h>
 #include <mips/tlb.h>
 
-#define VM_STACKPAGES    1024
+#define VM_STACKPAGES    18
 
 /*
  * Note! If OPT_DUMBVM is set, as is the case until you start the VM
@@ -97,18 +97,33 @@ as_destroy(struct addrspace *as)
 	 */
 	struct pageTableNode * ptTmp = as->pageTable;
 	struct pageTableNode * ptTmp2 = NULL;
+
+	uint32_t elo, ehi;
+	int i;
+
 	while(ptTmp != NULL){
-		ptTmp2 = ptTmp->next;
-		kfree(ptTmp);
-		ptTmp = ptTmp2;
+		ptTmp2 = ptTmp;
+		ptTmp = ptTmp->next;
+
+		i = tlb_probe(ptTmp2->pt_vas & PAGE_FRAME, 0);// no need "& PAGE_FRAME"
+		if(i!=-1)
+		{
+			tlb_read(&ehi, &elo, i);
+			KASSERT(elo & TLBLO_VALID);
+			tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
+		}
+
+		free_kpages(PADDR_TO_KVADDR(ptTmp2->pt_pas & PAGE_FRAME));
+		// kprintf("%d\n", i++);
+		kfree(ptTmp2);
 	}
 
 	struct regionInfoNode * riTmp = as->regionInfo;
 	struct regionInfoNode * riTmp2 = NULL;
 	while(riTmp != NULL){
-		riTmp2 = riTmp->next;
-		kfree(riTmp);
-		riTmp = riTmp2;
+		riTmp2 = riTmp;
+		riTmp = riTmp->next;
+		kfree(riTmp2);
 	}
 	kfree(as);
 }
@@ -202,16 +217,16 @@ as_prepare_load(struct addrspace *as)
 	 * Write this.
 	 */
 	// change all regions' permission to read & write
-	struct regionInfoNode * tmp = as->regionInfo;
-	while(tmp != NULL){
-		tmp->as_permission = PF_R | PF_W;
-		tmp = tmp->next;
-	}
-	tmp = NULL;
+	// struct regionInfoNode * tmp = as->regionInfo;
+	// while(tmp != NULL){
+	// 	tmp->as_permission = PF_R | PF_W;
+	// 	tmp = tmp->next;
+	// }
 	// as->as_stackpbase = alloc_kpages(VM_STACKPAGES);
 	// if (as->as_stackpbase == 0) {
 	// 	return ENOMEM;
 	// }
+	(void)as;
 	return 0;
 }
 
@@ -221,13 +236,12 @@ as_complete_load(struct addrspace *as)
 	/*
 	 * Write this.
 	 */
-
-	 struct regionInfoNode * tmp = as->regionInfo;
- 	while(tmp != NULL){
- 		tmp->as_permission = tmp->as_tmp_permission;
- 		tmp = tmp->next;
- 	}
-	tmp = NULL;
+	(void)as;
+	// struct regionInfoNode * tmp = as->regionInfo;
+ // 	while(tmp != NULL){
+ // 		tmp->as_permission = tmp->as_tmp_permission;
+ // 		tmp = tmp->next;
+ // 	}
 	return 0;
 }
 
@@ -239,6 +253,5 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 	 */
 	(void)as;
 	*stackptr = USERSTACK;
-
 	return 0;
 }

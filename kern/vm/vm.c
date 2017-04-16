@@ -11,7 +11,7 @@
 #include <vm.h>
 #include <elf.h>
 
-#define VM_STACKPAGES    1024
+#define VM_STACKPAGES    18
 
 /*
  * Wrap ram_stealmem in a spinlock.
@@ -59,7 +59,7 @@ free_kpages(vaddr_t addr)
 	// (void)addr;
     paddr_t paddr1 = addr - MIPS_KSEG0;
     if(paddr1 > ram_getsize()){
-        kprintf("vm.c free_kpages - invalid addr");
+        return;
     }
     int index = paddr1 / PAGE_SIZE;
 
@@ -163,7 +163,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	struct regionInfoNode * tmp = as->regionInfo;
 	//faultaddress should be only in non-stack non-heap regions.
-	if(faultaddress < as->heap_vbound){
+	if(faultaddress < as->heap_vbase){
 		while(tmp != NULL){
 			//KASSERT
 			KASSERT(tmp->as_vbase != 0);
@@ -185,7 +185,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	struct pageTableNode * ptTmp = as->pageTable;
 	bool found = 0;
 	while(ptTmp != NULL){
-		if(ptTmp->pt_vas == (faultaddress & PAGE_FRAME)){
+		if(ptTmp->pt_vas == faultaddress){
 			found = 1;
 			break;
 		}
@@ -206,7 +206,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		if(newpt == NULL){
 			return ENOMEM;
 		}
-		newpt->pt_vas = faultaddress & PAGE_FRAME;
+		newpt->pt_vas = faultaddress;
 		vaddr_t vaddr_tmp = alloc_kpages(1);
 		// kprintf("%x\n", vaddr_tmp);
 		if(vaddr_tmp == 0){
@@ -230,6 +230,23 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	uint32_t ehi, elo;
 	/* Disable interrupts on this CPU while frobbing the TLB. */
 	spl = splhigh();
+	ehi = faultaddress;
+
+	int i;
+	for (i=0; i<NUM_TLB; i++) {
+		tlb_read(&ehi, &elo, i);
+		if((ehi & PAGE_FRAME) == faultaddress || !(elo & TLBLO_VALID)){
+			ehi = faultaddress;
+			elo = paddr1 | TLBLO_DIRTY | TLBLO_VALID;
+			DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr1);
+			tlb_write(ehi, elo, i);
+			splx(spl);
+			return 0;
+		}else{
+			continue;
+		}
+
+	}
 	ehi = faultaddress;
 	elo = paddr1 | TLBLO_DIRTY | TLBLO_VALID;
 	tlb_random(ehi, elo);
