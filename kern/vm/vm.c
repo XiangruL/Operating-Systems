@@ -100,13 +100,6 @@ vm_tlbshootdown(const struct tlbshootdown *ts)
 	panic("dumbvm tried to do tlb shootdown?!\n");
 }
 
-static
-void
-as_zero_region(paddr_t paddr, unsigned npages)
-{
-	bzero((void *)PADDR_TO_KVADDR(paddr), npages * PAGE_SIZE);
-}
-
 int
 vm_fault(int faulttype, vaddr_t faultaddress)
 {
@@ -155,7 +148,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	if(faultaddress >= stacktop){
 		return EFAULT;
 	}
-	if(faultaddress >= as->heap_vbound && faultaddress < stackbase){
+	if(faultaddress >= as->heap_vbase + as->heap_vbound && faultaddress < stackbase){
 		return EFAULT;
 	}
 	// stack or heap:
@@ -199,6 +192,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			paddr1 = ptTmp->pt_pas & PAGE_FRAME;
 			//update TLB;
 		}else{
+			kprintf("permission error in vm_fault");
 			return EFAULT;
 		}
 	}else{
@@ -216,14 +210,17 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		}
 		newpt->pt_pas = vaddr_tmp - MIPS_KSEG0;
 		paddr1 = newpt->pt_pas;
-		as_zero_region(paddr1, 1);
+		bzero((void *)PADDR_TO_KVADDR(paddr1), 1 * PAGE_SIZE);
 		newpt->pt_pas |= tmp->as_permission;
-		if(as->pageTable == NULL){
-			as->pageTable = newpt;
-		}else{
-			newpt->next = as->pageTable->next;
-			as->pageTable->next = newpt;
-		}
+
+		newpt->next = as->pageTable;
+		as->pageTable = newpt;
+		// if(as->pageTable == NULL){
+		// 	as->pageTable = newpt;
+		// }else{
+		// 	newpt->next = as->pageTable->next;
+		// 	as->pageTable->next = newpt;
+		// }
 	}
 	//update TLB
 	/* make sure it's page-aligned */

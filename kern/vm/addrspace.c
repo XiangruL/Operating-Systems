@@ -77,29 +77,17 @@ as_destroy(struct addrspace *as)
 	/*
 	 * Clean up as needed.
 	 */
+	// (void)as;
 	struct pageTableNode * ptTmp = as->pageTable;
 	struct pageTableNode * ptTmp2 = NULL;
 
-	// uint32_t elo, ehi;
-	// int i;
 
 	while(ptTmp != NULL){
 		ptTmp2 = ptTmp;
 		ptTmp = ptTmp->next;
-
-		// i = tlb_probe(ptTmp2->pt_vas & PAGE_FRAME, 0);// no need "& PAGE_FRAME"
-		// if(i!=-1)
-		// {
-		// 	tlb_read(&ehi, &elo, i);
-		// 	KASSERT(elo & TLBLO_VALID);
-		// 	tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
-		// }
-
-		free_kpages(PADDR_TO_KVADDR(ptTmp2->pt_pas & PAGE_FRAME));
-		// kprintf("%d\n", i++);
+		free_kpages(PADDR_TO_KVADDR(ptTmp2->pt_pas));
 		kfree(ptTmp2);
 	}
-	as->pageTable = NULL;
 
 	struct regionInfoNode * riTmp = as->regionInfo;
 	struct regionInfoNode * riTmp2 = NULL;
@@ -108,7 +96,6 @@ as_destroy(struct addrspace *as)
 		riTmp = riTmp->next;
 		kfree(riTmp2);
 	}
-	as->regionInfo = NULL;
 
 	kfree(as);
 }
@@ -180,16 +167,18 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 	tmp->as_npages = npages;
 	tmp->as_permission = permission;// code & data = readonly
 	// tmp->as_tmp_permission = permission;
-	tmp->next = NULL;
-	if(as->regionInfo == NULL){
-		as->regionInfo = tmp;
-	}else{
-		tmp->next = as->regionInfo->next;
-		as->regionInfo->next = tmp;
-	}
+
+	tmp->next = as->regionInfo;
+	as->regionInfo = tmp;
+	// tmp->next = NULL;
+	// if(as->regionInfo == NULL){
+	// 	as->regionInfo = tmp;
+	// }else{
+	// 	tmp->next = as->regionInfo->next;
+	// 	as->regionInfo->next = tmp;
+	// }
 	if(as->heap_vbase < tmp->as_vbase + tmp->as_npages * PAGE_SIZE){
 		as->heap_vbase = tmp->as_vbase + tmp->as_npages * PAGE_SIZE;
-		as->heap_vbound = tmp->as_vbase + tmp->as_npages * PAGE_SIZE;
 	}
 	return 0;
 
