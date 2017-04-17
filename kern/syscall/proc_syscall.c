@@ -12,6 +12,7 @@
 #include <kern/wait.h>
 #include <kern/fcntl.h>
 #include <vfs.h>
+#include <vm.h>
 
 
 int
@@ -33,7 +34,7 @@ int sys_fork(struct trapframe * tf, int * retval){
     struct addrspace * newas = NULL;
     int result = 0;
     result = as_copy(curproc->p_addrspace, &newas);//no need for as_create
-    if(newas == NULL){
+    if(result){
         kfree(newtf);
         return ENOMEM;
     }
@@ -321,5 +322,57 @@ sys_execv(const char * program, char ** args){
     enter_new_process(args_count, (userptr_t)stackptr, NULL, stackptr, entry_point);
     panic("execv should not return\n");
 
+    return 0;
+}
+
+int
+sys_sbrk(int amount, vaddr_t * retval){
+    *retval = -1;
+    struct addrspace * as = curproc->p_addrspace;
+    vaddr_t heap_vbound = as->heap_vbound;
+    if(amount % PAGE_SIZE != 0){
+        kprintf("sbrk amount is not page aligned\n");
+        return EFAULT;
+    }
+
+    int npages = amount / PAGE_SIZE;
+
+    if((int)heap_vbound + npages < 0){
+        kprintf("sbrk bound < 0\n");
+        return EINVAL;
+    }
+    if(npages + heap_vbound >= USERSTACK - VM_STACKPAGES * PAGE_SIZE){
+        kprintf("sbrk bound exceeds stackbase");
+        return ENOMEM;
+    }
+
+
+    if(npages < 0 && as->pageTable != NULL){
+        //destroy pte
+        struct pageTableNode * pre = as->pageTable;
+        struct pageTableNode * cur = pre->next;
+        while(cur != NULL){
+            if(cur->pt_vas >= as->heap_vbase + (as->heap_vbound - npages) * PAGE_SIZE && cur->pt_vas < as->heap_vbase + as->heap_vbound * PAGE_SIZE){
+                pre->next = cur->next;
+                free_kpages(PADDR_TO_KVADDR(cur->pt_pas));
+        		kfree(cur);
+                cur = pre->next;
+            }else{
+                pre = cur;
+                cur = cur->next;
+            }
+        }
+        // head
+        // cur = as->pageTable;
+        pre = as->pageTable;
+        cur = pre->next;
+        if(pre->pt_vas >= as->heap_vbase + (as->heap_vbound - npages) * PAGE_SIZE && pre->pt_vas < as->heap_vbase + as->heap_vbound * PAGE_SIZE){
+            free_kpages(PADDR_TO_KVADDR(pre->pt_pas));
+            kfree(pre);
+            as->pageTable = cur;
+        }
+    }
+    *retval = as->heap_vbase + as->heap_vbound * PAGE_SIZE;
+    as->heap_vbound += npages;
     return 0;
 }

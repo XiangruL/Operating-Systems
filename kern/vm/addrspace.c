@@ -41,8 +41,6 @@
 #include <current.h>
 #include <mips/tlb.h>
 
-#define VM_STACKPAGES    18
-
 /*
  * Note! If OPT_DUMBVM is set, as is the case until you start the VM
  * assignment, this file is not compiled or linked or in any way
@@ -244,21 +242,63 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	/*
 	 * Write this.
 	 */
-	(void)old;
-	panic("as_copy not implemented");
-	// struct pageTableNode *ptTmp;
-	// struct regionInfoNode *riTmp = old->regionInfo;
-	// struct regionInfoNode *newri = (struct regionInfoNode
-	// 	 *)kmalloc(sizeof(struct regionInfoNode));
-	// newas->regionInfo = NULL;
-	// newas->heap_vbase = old->heap_vbase;
-	// newas->heap_vbound = old->heap_vbound;
-	//
-	// while(riTmp != NULL){
-	//
-	// }
-	//
-	// newas->pageTable = old->pageTable;
+
+	newas->heap_vbase = old->heap_vbase;
+	newas->heap_vbound = old->heap_vbound;
+
+	//pageTable
+	newas->pageTable = (struct pageTableNode*)kmalloc(sizeof(struct pageTableNode));
+	struct pageTableNode *oldPTtmp = old->pageTable;
+	//pageTable Head
+	if(oldPTtmp != NULL){
+		newas->pageTable->pt_vas = oldPTtmp->pt_vas;
+		newas->pageTable->pt_pas = oldPTtmp->pt_pas;
+		newas->pageTable->next = NULL;
+	}
+	//copy pageTable
+	struct pageTableNode *PTtmp = newas->pageTable;
+	struct pageTableNode *PTtmp2;
+	while(oldPTtmp != NULL){
+		//PTtmp2 init
+		PTtmp2 = (struct pageTableNode*)kmalloc(sizeof(struct pageTableNode));
+		PTtmp2->pt_vas = oldPTtmp->pt_vas;
+		PTtmp2->pt_pas = oldPTtmp->pt_pas;
+		PTtmp2->next = NULL;
+		//memory
+		memmove((void *)PADDR_TO_KVADDR(PTtmp2->pt_pas),
+			(const void *)PADDR_TO_KVADDR(oldPTtmp->pt_pas),
+			1*PAGE_SIZE);
+		//link
+		PTtmp->next = PTtmp2;
+		PTtmp = PTtmp->next;
+		oldPTtmp = oldPTtmp->next;
+	}
+
+	//regionInfo
+	newas->regionInfo = (struct regionInfoNode*)kmalloc(sizeof(struct regionInfoNode));
+	struct regionInfoNode *oldRItmp = old->regionInfo;
+	//regionInfo Head
+	if(oldRItmp != NULL){
+		newas->regionInfo->as_vbase = oldRItmp->as_vbase;
+		newas->regionInfo->as_npages = oldRItmp->as_npages;
+		newas->regionInfo->as_permission = oldRItmp->as_permission;
+		newas->regionInfo->next = NULL;
+	}
+	//copy regionInfo
+	struct regionInfoNode *RItmp = newas->regionInfo;
+	struct regionInfoNode *RItmp2;
+	while(oldRItmp != NULL){
+		//RItmp2 init
+		RItmp2 = (struct regionInfoNode*)kmalloc(sizeof(struct regionInfoNode));
+		RItmp2->as_vbase = oldRItmp->as_vbase;
+		RItmp2->as_npages = oldRItmp->as_npages;
+		RItmp2->as_permission = oldRItmp->as_permission;
+		RItmp2->next = NULL;
+		//link
+		RItmp->next = RItmp2;
+		RItmp = RItmp->next;
+		oldRItmp = oldRItmp->next;
+	}
 
 	*ret = newas;
 	return 0;

@@ -50,7 +50,7 @@ struct vnode;
 
 struct pageTableNode{
     vaddr_t pt_vas;
-    paddr_t pt_pas;//pt_pas = pas & PAGE_FRAME | Permission
+    paddr_t pt_pas;
     // int pt_permission;
     struct pageTableNode *next;
 };

@@ -11,7 +11,6 @@
 #include <vm.h>
 #include <elf.h>
 
-#define VM_STACKPAGES    18
 
 /*
  * Wrap ram_stealmem in a spinlock.
@@ -148,7 +147,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	if(faultaddress >= stacktop){
 		return EFAULT;
 	}
-	if(faultaddress >= as->heap_vbase + as->heap_vbound && faultaddress < stackbase){
+	if(faultaddress >= as->heap_vbase + as->heap_vbound / PAGE_SIZE && faultaddress < stackbase){
 		return EFAULT;
 	}
 	// stack or heap:
@@ -188,13 +187,13 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	}
 
 	if(found == 1){
-		if(((ptTmp->pt_pas & PF_R) == PF_R && faulttype == VM_FAULT_READ) || ((ptTmp->pt_pas & PF_W) == PF_W && faulttype == VM_FAULT_WRITE)){
-			paddr1 = ptTmp->pt_pas & PAGE_FRAME;
-			//update TLB;
-		}else{
-			kprintf("permission error in vm_fault");
-			return EFAULT;
-		}
+		// if(((ptTmp->pt_pas & PF_R) == PF_R && faulttype == VM_FAULT_READ) || ((ptTmp->pt_pas & PF_W) == PF_W && faulttype == VM_FAULT_WRITE)){
+			paddr1 = ptTmp->pt_pas;// & PAGE_FRAME;
+		// 	//update TLB;
+		// }else{
+		// 	kprintf("permission error in vm_fault");
+		// 	return EFAULT;
+		// }
 	}else{
 		//create
 		struct pageTableNode * newpt;
@@ -211,7 +210,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		newpt->pt_pas = vaddr_tmp - MIPS_KSEG0;
 		paddr1 = newpt->pt_pas;
 		bzero((void *)PADDR_TO_KVADDR(paddr1), 1 * PAGE_SIZE);
-		newpt->pt_pas |= tmp->as_permission;
+		// newpt->pt_pas |= tmp->as_permission;
 
 		newpt->next = as->pageTable;
 		as->pageTable = newpt;
