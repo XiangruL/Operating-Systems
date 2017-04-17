@@ -68,6 +68,7 @@ void
 vm_bootstrap(void)
 {
 	/* Do nothing. */
+
 }
 
 /*
@@ -108,14 +109,31 @@ getppages(unsigned long npages)
 vaddr_t
 alloc_kpages(unsigned npages)
 {
-	paddr_t pa;
+	paddr_t pa = 0;
+    unsigned tmp = 0;
+    spinlock_acquire(&stealmem_lock);
 
-	dumbvm_can_sleep();
-	pa = getppages(npages);
-	if (pa==0) {
-		return 0;
-	}
-	return PADDR_TO_KVADDR(pa);
+    for(unsigned i = cm_addr / PAGE_SIZE ; i < ram_getsize()/PAGE_SIZE; i++){
+        if(coremap[i].cm_status == Free){
+            tmp++;
+        }else{
+            tmp = 0;
+        }
+        if(tmp == npages){
+            pa = (i - npages + 1) * PAGE_SIZE;
+            for(unsigned k = i - npages + 1; k <= i;k++){
+                coremap[k].cm_status = Dirty;
+                // coremap[k].cm_size = PAGE_SIZE;
+                if(k == i - npages + 1){
+                    coremap[k].cm_len = npages;
+                }
+            }
+            spinlock_release(&stealmem_lock);
+            return PADDR_TO_KVADDR(pa);
+        }
+    }
+    spinlock_release(&stealmem_lock);
+	return 0;// no
 }
 
 void
@@ -123,7 +141,23 @@ free_kpages(vaddr_t addr)
 {
 	/* nothing - leak the memory. */
 
-	(void)addr;
+	// (void)addr;
+    paddr_t paddr1 = addr - MIPS_KSEG0;
+    if(paddr1 > ram_getsize()){
+        return;
+    }
+    int index = paddr1 / PAGE_SIZE;
+
+    // synchronization
+    spinlock_acquire(&stealmem_lock);
+    if(coremap[index].cm_len >= 1){
+        for(unsigned i = 0; i < coremap[index].cm_len; i++){
+            coremap[index + i].cm_status = Free;
+            // coremap[index + i].cm_size = 0;
+        }
+        coremap[index].cm_len = 0;
+    }
+    spinlock_release(&stealmem_lock);
 }
 
 unsigned
@@ -132,7 +166,15 @@ coremap_used_bytes() {
 
 	/* dumbvm doesn't track page allocations. Return 0 so that khu works. */
 
-	return 0;
+	unsigned int res = 0;
+    spinlock_acquire(&stealmem_lock);
+    for(unsigned i = 0; i < ram_getsize()/PAGE_SIZE; i++){
+        if(coremap[i].cm_status != Free){
+            res++;
+        }
+    }
+    spinlock_release(&stealmem_lock);
+    return res*PAGE_SIZE;
 }
 
 void

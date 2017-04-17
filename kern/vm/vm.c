@@ -30,6 +30,7 @@ alloc_kpages(unsigned npages)
 	paddr_t pa = 0;
     unsigned tmp = 0;
     spinlock_acquire(&coremap_lock);
+
     for(unsigned i = cm_addr / PAGE_SIZE ; i < ram_getsize()/PAGE_SIZE; i++){
         if(coremap[i].cm_status == Free){
             tmp++;
@@ -178,6 +179,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			}
 		}
 		if(tmp == NULL){
+			kprintf("vm.c invalid faultaddress");
 			return EFAULT;// invalid faultaddress
 		}
 	}
@@ -215,7 +217,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		newpt->pt_pas = vaddr_tmp - MIPS_KSEG0;
 		paddr1 = newpt->pt_pas;
 		as_zero_region(paddr1, 1);
-		newpt->pt_pas |= tmp->as_tmp_permission;
+		newpt->pt_pas |= tmp->as_permission;
 		if(as->pageTable == NULL){
 			as->pageTable = newpt;
 		}else{
@@ -223,7 +225,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			as->pageTable->next = newpt;
 		}
 	}
-
 	//update TLB
 	/* make sure it's page-aligned */
 	KASSERT((paddr1 & PAGE_FRAME) == paddr1);

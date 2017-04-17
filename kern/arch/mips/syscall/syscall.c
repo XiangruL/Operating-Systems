@@ -210,6 +210,7 @@ syscall(struct trapframe *tf)
 	 */
 
 	tf->tf_epc += 4;
+	// kprintf("here: %x\n", tf->tf_epc);
 
 	/* Make sure the syscall code didn't forget to lower spl */
 	KASSERT(curthread->t_curspl == 0);

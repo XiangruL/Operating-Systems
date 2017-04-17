@@ -59,7 +59,7 @@ struct regionInfoNode{
     vaddr_t as_vbase;
     size_t as_npages;
     int as_permission;
-    int as_tmp_permission;
+    // int as_tmp_permission;
     struct regionInfoNode *next;
 };
 

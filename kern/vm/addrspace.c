@@ -69,25 +69,7 @@ as_create(void)
 	return as;
 }
 
-int
-as_copy(struct addrspace *old, struct addrspace **ret)
-{
-	struct addrspace *newas;
 
-	newas = as_create();
-	if (newas==NULL) {
-		return ENOMEM;
-	}
-
-	/*
-	 * Write this.
-	 */
-	panic("as_copy not implemented");
-	(void)old;
-
-	*ret = newas;
-	return 0;
-}
 
 void
 as_destroy(struct addrspace *as)
@@ -98,20 +80,20 @@ as_destroy(struct addrspace *as)
 	struct pageTableNode * ptTmp = as->pageTable;
 	struct pageTableNode * ptTmp2 = NULL;
 
-	uint32_t elo, ehi;
-	int i;
+	// uint32_t elo, ehi;
+	// int i;
 
 	while(ptTmp != NULL){
 		ptTmp2 = ptTmp;
 		ptTmp = ptTmp->next;
 
-		i = tlb_probe(ptTmp2->pt_vas & PAGE_FRAME, 0);// no need "& PAGE_FRAME"
-		if(i!=-1)
-		{
-			tlb_read(&ehi, &elo, i);
-			KASSERT(elo & TLBLO_VALID);
-			tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
-		}
+		// i = tlb_probe(ptTmp2->pt_vas & PAGE_FRAME, 0);// no need "& PAGE_FRAME"
+		// if(i!=-1)
+		// {
+		// 	tlb_read(&ehi, &elo, i);
+		// 	KASSERT(elo & TLBLO_VALID);
+		// 	tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
+		// }
 
 		free_kpages(PADDR_TO_KVADDR(ptTmp2->pt_pas & PAGE_FRAME));
 		// kprintf("%d\n", i++);
@@ -197,7 +179,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 	tmp->as_vbase = vaddr;
 	tmp->as_npages = npages;
 	tmp->as_permission = permission;// code & data = readonly
-	tmp->as_tmp_permission = permission;
+	// tmp->as_tmp_permission = permission;
 	tmp->next = NULL;
 	if(as->regionInfo == NULL){
 		as->regionInfo = tmp;
@@ -256,5 +238,39 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 	 */
 	(void)as;
 	*stackptr = USERSTACK;
+	return 0;
+}
+
+
+int
+as_copy(struct addrspace *old, struct addrspace **ret)
+{
+	struct addrspace *newas;
+
+	newas = as_create();
+	if (newas==NULL) {
+		return ENOMEM;
+	}
+
+	/*
+	 * Write this.
+	 */
+	(void)old;
+	panic("as_copy not implemented");
+	// struct pageTableNode *ptTmp;
+	// struct regionInfoNode *riTmp = old->regionInfo;
+	// struct regionInfoNode *newri = (struct regionInfoNode
+	// 	 *)kmalloc(sizeof(struct regionInfoNode));
+	// newas->regionInfo = NULL;
+	// newas->heap_vbase = old->heap_vbase;
+	// newas->heap_vbound = old->heap_vbound;
+	//
+	// while(riTmp != NULL){
+	//
+	// }
+	//
+	// newas->pageTable = old->pageTable;
+
+	*ret = newas;
 	return 0;
 }
