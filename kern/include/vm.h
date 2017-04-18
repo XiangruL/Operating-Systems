@@ -43,7 +43,7 @@
 #define VM_FAULT_READ        0    /* A read was attempted */
 #define VM_FAULT_WRITE       1    /* A write was attempted */
 #define VM_FAULT_READONLY    2    /* A write to a readonly page was attempted*/
-#define VM_STACKPAGES    18
+#define VM_STACKPAGES    1024//stacktest need 200 * 4KB stack
 
 enum cm_status_t { Fixed, Clean, Dirty, Free};
 
