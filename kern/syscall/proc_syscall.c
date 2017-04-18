@@ -118,6 +118,7 @@ int sys_waitpid(pid_t pid, int * status, int options, pid_t *retval) {
     }
     as_destroy(p->p_addrspace);
     lock_destroy(p->p_lk);
+    spinlock_cleanup(&p->p_lock);
     cv_destroy(p->p_cv);
     p->p_addrspace = NULL;
     kfree(p->p_name);
@@ -152,6 +153,7 @@ void sys__exit(int exitcode, bool trap_sig) {
         lock_release(p->p_lk);
         as_destroy(p->p_addrspace);
         lock_destroy(p->p_lk);
+        spinlock_cleanup(&p->p_lock);
         cv_destroy(p->p_cv);
         p->p_addrspace = NULL;
         kfree(p->p_name);
@@ -253,7 +255,7 @@ sys_execv(const char * program, char ** args){
     ((char **) kargs_pad)[args_count] = NULL;
 
     kfree(copy);
-    copy = NULL;
+    // copy = NULL;
     for(int i = args_count - 1; i >= 0; i--){
         if(kargs[i] != NULL){
             kfree(kargs[i]);
@@ -279,6 +281,7 @@ sys_execv(const char * program, char ** args){
     if (result) {
         return result;
     }
+    as_destroy(curproc->p_addrspace);
     as = as_create();
     if (as == NULL) {
         vfs_close(v);
@@ -287,16 +290,16 @@ sys_execv(const char * program, char ** args){
     // switch to it and activate it
     proc_setas(as);
     as_activate();
-    //struct addrspace *old_as = as;
+    // struct addrspace *old_as = as;
     // load the executable
 
     result = load_elf(v, &entry_point);
     if (result) {
         vfs_close(v);
-	//curthread->p_addrspace = old_as;
+	// curthread->p_addrspace = old_as;
         return result;
     }
-    //as_destroy(old_as);
+
     vfs_close(v);
 
     /** step 3 copy from kernel to userland **/

@@ -122,6 +122,9 @@ fileTable_init(void)
 		vfs_close(v2);
 		return ENFILE;
 	}
+	kfree(console);
+	kfree(console1);
+	kfree(console2);
 	return 0;
 }
 int
