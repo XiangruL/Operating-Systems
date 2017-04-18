@@ -172,7 +172,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			}
 		}
 		if(tmp == NULL){
-			kprintf("vm.c invalid faultaddress");
+			// kprintf("vm.c invalid faultaddress");
 			return EFAULT;// invalid faultaddress
 		}
 	}
