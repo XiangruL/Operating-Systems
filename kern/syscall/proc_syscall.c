@@ -259,9 +259,10 @@ sys_execv(const char * program, char ** args){
     for(int i = args_count - 1; i >= 0; i--){
         if(kargs[i] != NULL){
             kfree(kargs[i]);
-            kargs[i] = NULL;
+            // kargs[i] = NULL;
         }
     }
+    kfree(kargs);
     // copy program
     char progname[PATH_MAX];
     // char *progname = (char *)kmalloc(sizeof(char ) * NAME_MAX);

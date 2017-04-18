@@ -77,6 +77,9 @@ as_destroy(struct addrspace *as)
 	 * Clean up as needed.
 	 */
 	// (void)as;
+	if(as == NULL){
+		return;
+	}
 	struct pageTableNode * ptTmp = as->pageTable;
 	struct pageTableNode * ptTmp2 = NULL;
 
