@@ -217,7 +217,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		as->pageTable = newpt;
 		//if pte is in heap
 		if(newpt->pt_vas >= as->heap_vbase && newpt->pt_vas < as->heap_vbase + as->heap_vbound * PAGE_SIZE){
-			as->heap_page_used++;
+			// as->heap_page_used++;
 		}
 	}
 	//update TLB

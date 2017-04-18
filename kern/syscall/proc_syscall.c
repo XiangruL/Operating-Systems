@@ -332,7 +332,7 @@ sys_sbrk(int amount, vaddr_t * retval){
     size_t heap_vbound = as->heap_vbound;
     if(amount % PAGE_SIZE != 0){
         kprintf("sbrk amount is not page aligned\n");
-        return EFAULT;
+        return EINVAL;
     }
 
     int npages = amount / PAGE_SIZE;
@@ -341,14 +341,14 @@ sys_sbrk(int amount, vaddr_t * retval){
         kprintf("sbrk bound < 0\n");
         return EINVAL;
     }
-    if(heap_vbound * PAGE_SIZE + amount > 5 * 1024 * 1024){
-        return ENOMEM;
-    }
-    if(as->heap_page_used * PAGE_SIZE > 1024 * 1024){//sys.config
-        kprintf("heap_page_used: %d\n", as->heap_page_used);
-        kprintf("sbrk out of memory\n");
-        return ENOMEM;
-    }
+    // if(heap_vbound * PAGE_SIZE + amount > 5 * 1024 * 1024){
+    //     return ENOMEM;
+    // }
+    // if(as->heap_page_used * PAGE_SIZE > 1024 * 1024){//sys.config
+    //     kprintf("heap_page_used: %d\n", as->heap_page_used);
+    //     kprintf("sbrk out of memory\n");
+    //     return ENOMEM;
+    // }
     if(amount + heap_vbound * PAGE_SIZE >= USERSTACK - VM_STACKPAGES * PAGE_SIZE){
         kprintf("sbrk bound exceeds stackbase\n");
         return ENOMEM;
@@ -365,7 +365,7 @@ sys_sbrk(int amount, vaddr_t * retval){
                 free_kpages(PADDR_TO_KVADDR(cur->pt_pas));
         		kfree(cur);
                 cur = pre->next;
-                as->heap_page_used--;
+                // as->heap_page_used--;
             }else{
                 pre = cur;
                 cur = cur->next;
@@ -379,7 +379,7 @@ sys_sbrk(int amount, vaddr_t * retval){
             free_kpages(PADDR_TO_KVADDR(pre->pt_pas));
             kfree(pre);
             as->pageTable = cur;
-            as->heap_page_used--;
+            // as->heap_page_used--;
         }
         as_activate();
     }

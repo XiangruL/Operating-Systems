@@ -64,7 +64,7 @@ as_create(void)
 	as->regionInfo = NULL;
 	as->heap_vbase = 0;
 	as->heap_vbound = 0;
-	as->heap_page_used = 0;
+	// as->heap_page_used = 0;
 	return as;
 }
 
@@ -243,18 +243,26 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	/*
 	 * Write this.
 	 */
-
+	vaddr_t vaddr_tmp;
 	newas->heap_vbase = old->heap_vbase;
 	newas->heap_vbound = old->heap_vbound;
-	newas->heap_page_used = old->heap_page_used;
+	// newas->heap_page_used = old->heap_page_used;
 	//pageTable
 	newas->pageTable = (struct pageTableNode*)kmalloc(sizeof(struct pageTableNode));
 	struct pageTableNode *oldPTtmp = old->pageTable;
 	//pageTable Head
 	if(oldPTtmp != NULL){
 		newas->pageTable->pt_vas = oldPTtmp->pt_vas;
-		newas->pageTable->pt_pas = oldPTtmp->pt_pas;
 		newas->pageTable->next = NULL;
+		vaddr_tmp = alloc_kpages(1);
+		if(vaddr_tmp == 0){
+			return ENOMEM;
+		}
+		newas->pageTable->pt_pas = vaddr_tmp - MIPS_KSEG0;
+		bzero((void *)PADDR_TO_KVADDR(newas->pageTable->pt_pas), 1 * PAGE_SIZE);
+		memmove((void *)PADDR_TO_KVADDR(newas->pageTable->pt_pas),
+			(const void *)PADDR_TO_KVADDR(oldPTtmp->pt_pas),
+			1*PAGE_SIZE);
 	}
 	//copy pageTable
 	struct pageTableNode *PTtmp = newas->pageTable;
@@ -263,9 +271,14 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		//PTtmp2 init
 		PTtmp2 = (struct pageTableNode*)kmalloc(sizeof(struct pageTableNode));
 		PTtmp2->pt_vas = oldPTtmp->pt_vas;
-		PTtmp2->pt_pas = oldPTtmp->pt_pas;
 		PTtmp2->next = NULL;
 		//memory
+		vaddr_tmp = alloc_kpages(1);
+		if(vaddr_tmp == 0){
+			return ENOMEM;
+		}
+		PTtmp2->pt_pas = vaddr_tmp - MIPS_KSEG0;
+		bzero((void *)PADDR_TO_KVADDR(PTtmp2->pt_pas), 1 * PAGE_SIZE);
 		memmove((void *)PADDR_TO_KVADDR(PTtmp2->pt_pas),
 			(const void *)PADDR_TO_KVADDR(oldPTtmp->pt_pas),
 			1*PAGE_SIZE);
