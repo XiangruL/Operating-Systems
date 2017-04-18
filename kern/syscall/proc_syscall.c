@@ -329,7 +329,7 @@ int
 sys_sbrk(int amount, vaddr_t * retval){
     *retval = -1;
     struct addrspace * as = curproc->p_addrspace;
-    vaddr_t heap_vbound = as->heap_vbound;
+    size_t heap_vbound = as->heap_vbound;
     if(amount % PAGE_SIZE != 0){
         kprintf("sbrk amount is not page aligned\n");
         return EFAULT;
@@ -341,8 +341,16 @@ sys_sbrk(int amount, vaddr_t * retval){
         kprintf("sbrk bound < 0\n");
         return EINVAL;
     }
-    if(npages + heap_vbound >= USERSTACK - VM_STACKPAGES * PAGE_SIZE){
-        kprintf("sbrk bound exceeds stackbase");
+    if(heap_vbound * PAGE_SIZE + amount > 5 * 1024 * 1024){
+        return ENOMEM;
+    }
+    if(as->heap_page_used * PAGE_SIZE > 1024 * 1024){//sys.config
+        kprintf("heap_page_used: %d\n", as->heap_page_used);
+        kprintf("sbrk out of memory\n");
+        return ENOMEM;
+    }
+    if(amount + heap_vbound * PAGE_SIZE >= USERSTACK - VM_STACKPAGES * PAGE_SIZE){
+        kprintf("sbrk bound exceeds stackbase\n");
         return ENOMEM;
     }
 
@@ -352,11 +360,12 @@ sys_sbrk(int amount, vaddr_t * retval){
         struct pageTableNode * pre = as->pageTable;
         struct pageTableNode * cur = pre->next;
         while(cur != NULL){
-            if(cur->pt_vas >= as->heap_vbase + (as->heap_vbound - npages) * PAGE_SIZE && cur->pt_vas < as->heap_vbase + as->heap_vbound * PAGE_SIZE){
+            if(cur->pt_vas >= as->heap_vbase + (as->heap_vbound + npages) * PAGE_SIZE && cur->pt_vas < as->heap_vbase + as->heap_vbound * PAGE_SIZE){
                 pre->next = cur->next;
                 free_kpages(PADDR_TO_KVADDR(cur->pt_pas));
         		kfree(cur);
                 cur = pre->next;
+                as->heap_page_used--;
             }else{
                 pre = cur;
                 cur = cur->next;
@@ -366,13 +375,18 @@ sys_sbrk(int amount, vaddr_t * retval){
         // cur = as->pageTable;
         pre = as->pageTable;
         cur = pre->next;
-        if(pre->pt_vas >= as->heap_vbase + (as->heap_vbound - npages) * PAGE_SIZE && pre->pt_vas < as->heap_vbase + as->heap_vbound * PAGE_SIZE){
+        if(pre->pt_vas >= as->heap_vbase + (as->heap_vbound + npages) * PAGE_SIZE && pre->pt_vas < as->heap_vbase + as->heap_vbound * PAGE_SIZE){
             free_kpages(PADDR_TO_KVADDR(pre->pt_pas));
             kfree(pre);
             as->pageTable = cur;
+            as->heap_page_used--;
         }
+        as_activate();
     }
     *retval = as->heap_vbase + as->heap_vbound * PAGE_SIZE;
+    // kprintf("retval: %x", as->heap_vbase);
     as->heap_vbound += npages;
+    // kprintf("retval: %x", as->heap_vbase + as->heap_vbound * PAGE_SIZE);
+
     return 0;
 }

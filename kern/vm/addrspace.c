@@ -64,6 +64,7 @@ as_create(void)
 	as->regionInfo = NULL;
 	as->heap_vbase = 0;
 	as->heap_vbound = 0;
+	as->heap_page_used = 0;
 	return as;
 }
 
@@ -245,7 +246,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 
 	newas->heap_vbase = old->heap_vbase;
 	newas->heap_vbound = old->heap_vbound;
-
+	newas->heap_page_used = old->heap_page_used;
 	//pageTable
 	newas->pageTable = (struct pageTableNode*)kmalloc(sizeof(struct pageTableNode));
 	struct pageTableNode *oldPTtmp = old->pageTable;

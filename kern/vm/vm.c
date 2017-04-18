@@ -147,9 +147,10 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	if(faultaddress >= stacktop){
 		return EFAULT;
 	}
-	if(faultaddress >= as->heap_vbase + as->heap_vbound / PAGE_SIZE && faultaddress < stackbase){
+	if(faultaddress >= as->heap_vbase + as->heap_vbound * PAGE_SIZE && faultaddress < stackbase){
 		return EFAULT;
 	}
+
 	// stack or heap:
 	// do nothing in this step and skip to create new pte.
 	// non-stack:
@@ -214,12 +215,10 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 		newpt->next = as->pageTable;
 		as->pageTable = newpt;
-		// if(as->pageTable == NULL){
-		// 	as->pageTable = newpt;
-		// }else{
-		// 	newpt->next = as->pageTable->next;
-		// 	as->pageTable->next = newpt;
-		// }
+		//if pte is in heap
+		if(newpt->pt_vas >= as->heap_vbase && newpt->pt_vas < as->heap_vbase + as->heap_vbound * PAGE_SIZE){
+			as->heap_page_used++;
+		}
 	}
 	//update TLB
 	/* make sure it's page-aligned */

@@ -77,7 +77,8 @@ struct addrspace {
         struct pageTableNode *pageTable;
         struct regionInfoNode *regionInfo;
         vaddr_t heap_vbase;
-        vaddr_t heap_vbound;
+        size_t heap_vbound;
+        size_t heap_page_used;
         // paddr_t as_stackpbase;
 
         /* Put stuff here for your VM system */
