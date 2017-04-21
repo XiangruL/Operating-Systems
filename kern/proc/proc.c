@@ -56,6 +56,8 @@
  */
 struct proc *kproc;
 struct proc *procTable[PID_MAX];
+static struct spinlock procTable_lock = SPINLOCK_INITIALIZER;
+
 /*
  * Create a proc structure.
  */
@@ -93,6 +95,7 @@ proc_create(const char *name)
 	// }
 
 	// PID
+	spinlock_acquire(&procTable_lock);
 	int i = PID_MIN;
 	while(i < PID_MAX){
 		if(procTable[i] == NULL){
@@ -101,6 +104,9 @@ proc_create(const char *name)
 		i++;
 	}
 	if(i == PID_MAX){
+		kfree(proc->p_name);
+		kfree(proc);
+		spinlock_release(&procTable_lock);
 		return NULL;//ENPROC/EMPROC
 	}
 
@@ -110,6 +116,7 @@ proc_create(const char *name)
 	if(proc->p_lk == NULL){
 		kfree(proc->p_name);
 		kfree(proc);
+		spinlock_release(&procTable_lock);
 		return NULL;
 	}
 	proc->p_cv = cv_create("proc cv");
@@ -117,6 +124,7 @@ proc_create(const char *name)
 		kfree(proc->p_name);
 		kfree(proc);
 		lock_destroy(proc->p_lk);
+		spinlock_release(&procTable_lock);
 		return NULL;
 	}
 	// if(proc->p_sem == NULL){
@@ -126,6 +134,7 @@ proc_create(const char *name)
 	// }
 
 	procTable[i] = proc;
+	spinlock_release(&procTable_lock);
 	proc->p_PID = i;
 	proc->p_PPID = -1;
 	proc->p_exit = false;
