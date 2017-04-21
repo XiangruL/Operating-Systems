@@ -206,6 +206,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		vaddr_t vaddr_tmp = alloc_kpages(1);
 		// kprintf("%x\n", vaddr_tmp);
 		if(vaddr_tmp == 0){
+			kfree(newpt);
 			return ENOMEM;
 		}
 		newpt->pt_pas = vaddr_tmp - MIPS_KSEG0;

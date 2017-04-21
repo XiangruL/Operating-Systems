@@ -249,9 +249,13 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	vaddr_t vaddr_tmp;
 	newas->heap_vbase = old->heap_vbase;
 	newas->heap_vbound = old->heap_vbound;
-	// newas->heap_page_used = old->heap_page_used;
+
 	//pageTable
 	newas->pageTable = (struct pageTableNode*)kmalloc(sizeof(struct pageTableNode));
+	if(newas->pageTable == NULL){
+		return ENOMEM;
+	}
+
 	struct pageTableNode *oldPTtmp = old->pageTable;
 	//pageTable Head
 	if(oldPTtmp != NULL){
@@ -259,6 +263,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		newas->pageTable->next = NULL;
 		vaddr_tmp = alloc_kpages(1);
 		if(vaddr_tmp == 0){
+			as_destroy(newas);
 			return ENOMEM;
 		}
 		newas->pageTable->pt_pas = vaddr_tmp - MIPS_KSEG0;
@@ -273,11 +278,16 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	while(oldPTtmp != NULL){
 		//PTtmp2 init
 		PTtmp2 = (struct pageTableNode*)kmalloc(sizeof(struct pageTableNode));
+		if(PTtmp2 == NULL){
+			as_destroy(newas);
+			return ENOMEM;
+		}
 		PTtmp2->pt_vas = oldPTtmp->pt_vas;
 		PTtmp2->next = NULL;
 		//memory
 		vaddr_tmp = alloc_kpages(1);
 		if(vaddr_tmp == 0){
+			as_destroy(newas);
 			return ENOMEM;
 		}
 		PTtmp2->pt_pas = vaddr_tmp - MIPS_KSEG0;
@@ -293,6 +303,10 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 
 	//regionInfo
 	newas->regionInfo = (struct regionInfoNode*)kmalloc(sizeof(struct regionInfoNode));
+	if(newas->regionInfo == NULL){
+		as_destroy(newas);
+		return ENOMEM;
+	}
 	struct regionInfoNode *oldRItmp = old->regionInfo;
 	//regionInfo Head
 	if(oldRItmp != NULL){
@@ -307,6 +321,10 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	while(oldRItmp != NULL){
 		//RItmp2 init
 		RItmp2 = (struct regionInfoNode*)kmalloc(sizeof(struct regionInfoNode));
+		if(RItmp2 == NULL){
+			as_destroy(newas);
+			return ENOMEM;
+		}
 		RItmp2->as_vbase = oldRItmp->as_vbase;
 		RItmp2->as_npages = oldRItmp->as_npages;
 		RItmp2->as_permission = oldRItmp->as_permission;
