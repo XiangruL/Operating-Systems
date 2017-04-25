@@ -143,11 +143,12 @@ user_alloc_onepage()
 
 		struct pageTableNode * tmp_ptNode = procTable[tmp_pid]->p_addrspace->pageTable;
 		while(tmp_ptNode != NULL){
-			if(tmp_ptNode->pt_pas / PAGE_SIZE == victim){
+			if(tmp_ptNode->pt_pas == victim * PAGE_SIZE){
 				break;
 			}
 			tmp_ptNode = tmp_ptNode->next;
 		}
+		KASSERT(tmp_ptNode->pt_pas == victim * PAGE_SIZE);
 		pa = tmp_ptNode->pt_pas;
 		//2.2 check status
 		if(tmp_ptNode->pt_isDirty){
@@ -169,7 +170,8 @@ user_alloc_onepage()
 		spinlock_acquire(&coremap_lock);
 		coremap[victim].cm_pid = curproc->p_PID;
 		coremap[victim].cm_inPTE = true;
-		coremap[victim].cm_len = 1;coremap[victim].cm_status = Dirty;
+		coremap[victim].cm_len = 1;
+		coremap[victim].cm_status = Dirty;
 
 		spinlock_release(&coremap_lock);
 		//4. tlbshootdown
@@ -349,17 +351,13 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			KASSERT((paddr1 & PAGE_FRAME) == paddr1);
 			if(faulttype == VM_FAULT_READ){
 				ptTmp->pt_isDirty = false;
-				spinlock_acquire(&coremap_lock);
 				coremap[paddr1 / PAGE_SIZE].cm_status = Clean;
-				spinlock_release(&coremap_lock);
 			}
 			if(faulttype == VM_FAULT_WRITE){
 				ptTmp->pt_isDirty = true;
-				spinlock_acquire(&coremap_lock);
 				coremap[paddr1 / PAGE_SIZE].cm_status = Dirty;
-				spinlock_release(&coremap_lock);
 				KASSERT(bitmap_isset(vm_bitmap, ptTmp->pt_bm_index) != 0);
-				// bitmap_unmark(vm_bitmap, ptTmp->pt_bm_index / PAGE_SIZE);
+				bitmap_unmark(vm_bitmap, ptTmp->pt_bm_index);
 			}
 		}else{
 			//1.2 if in memory
@@ -389,10 +387,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 		newpt->next = as->pageTable;
 		as->pageTable = newpt;
-		//if pte is in heap
-		if(newpt->pt_vas >= as->heap_vbase && newpt->pt_vas < as->heap_vbase + as->heap_vbound * PAGE_SIZE){
-			// as->heap_page_used++;
-		}
+
 	}
 	//update TLB
 	/* make sure it's page-aligned */
@@ -409,7 +404,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		if((ehi & PAGE_FRAME) == faultaddress || !(elo & TLBLO_VALID)){
 			ehi = faultaddress;
 			elo = paddr1 | TLBLO_DIRTY | TLBLO_VALID;
-			DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr1);
+			DEBUG(DB_VM, "vm: 0x%x -> 0x%x\n", faultaddress, paddr1);
 			tlb_write(ehi, elo, i);
 			splx(spl);
 			return 0;
