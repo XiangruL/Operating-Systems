@@ -155,20 +155,22 @@ ram_getfirstfree(void)
 void cm_init(void) {
 	// allocate coremap:
 	// firstpaddr, lastpaddr, firstfree
-	int num = lastpaddr / PAGE_SIZE;
-	int cm_page = ( num * sizeof(struct coremap_entry) + PAGE_SIZE - 1 ) / PAGE_SIZE;
+	cm_num = lastpaddr / PAGE_SIZE;
+	int cm_page = ( cm_num * sizeof(struct coremap_entry) + PAGE_SIZE - 1 ) / PAGE_SIZE;
 	cm_addr = ram_stealmem(cm_page);
 	coremap = (void *)PADDR_TO_KVADDR(cm_addr);
-
 	// init coremap, 1 fixed, 2 free
 	int fixedPage = ( firstpaddr + PAGE_SIZE - 1 )/ PAGE_SIZE;
 	for(int i = 0; i<fixedPage; i++){
 		coremap[i].cm_status = Fixed;
 	}
-	for(int i = fixedPage; i < num; i++){
+	for(int i = fixedPage; i < cm_num; i++){
 		coremap[i].cm_status = Free;
 		// coremap[i].cm_size = 0;
 		coremap[i].cm_len = 0;
+		// coremap[i].cm_fifo = 0;
+		coremap[i].cm_pid = -1;
+		coremap[i].cm_inPTE = false;
 	}
 
 }

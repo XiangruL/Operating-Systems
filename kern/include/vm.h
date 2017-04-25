@@ -45,6 +45,9 @@
 #define VM_FAULT_READONLY    2    /* A write to a readonly page was attempted*/
 #define VM_STACKPAGES    1024//stacktest need 200 * 4KB stack
 
+# define SWAP_FILENAME "lhd0raw:"
+#define FIFO 2
+
 enum cm_status_t { Fixed, Clean, Dirty, Free};
 
 struct coremap_entry{
@@ -55,12 +58,19 @@ struct coremap_entry{
     */
     // size_t cm_size;
     unsigned cm_len;
+    bool cm_inPTE;
+    pid_t cm_pid;
+    // int cm_fifo;
     //cm_pid
 };
 
 paddr_t cm_addr;//extern
+int cm_num;
+
+bool vm_swapenabled;
 
 struct coremap_entry * coremap;//extern
+struct bitmap * vm_bitmap;
 
 /* Initialization function */
 void vm_bootstrap(void);
@@ -83,5 +93,11 @@ unsigned int coremap_used_bytes(void);
 void vm_tlbshootdown(const struct tlbshootdown *);
 
 void cm_init(void);
+
+vaddr_t user_alloc_onepage(void);
+
+int block_write(void * buffer, off_t offset);
+
+int block_read(void * buffer, off_t offset);
 
 #endif /* _VM_H_ */

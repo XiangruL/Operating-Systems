@@ -10,18 +10,61 @@
 #include <addrspace.h>
 #include <vm.h>
 #include <elf.h>
-
+//file:
+#include <vnode.h>
+#include <vfs.h>
+#include <kern/fcntl.h>
+#include <uio.h>
+//bitmap
+#include <bitmap.h>
 
 /*
  * Wrap ram_stealmem in a spinlock.
  */
 static struct spinlock coremap_lock = SPINLOCK_INITIALIZER;
+// static int fifo = 0;
+static struct vnode * swap_vnode;
+
 void
 vm_bootstrap(void)
 {
 	/* Do nothing. */
+	//1 vfs open
+	if(vfs_open((char *)SWAP_FILENAME, O_RDWR, 0, &swap_vnode)){
+		vm_swapenabled = false;
+	}else{
+		vm_swapenabled = true;
+	}
+	//2 bitmap create
+	vm_bitmap = bitmap_create(5 * 1024 * 1024 / PAGE_SIZE);
+
 }
 
+int
+block_write(void *buffer, off_t offset/*default size: PAGE_SIZE*/){
+	struct iovec iov;
+	struct uio u;
+
+	uio_kinit(&iov, &u, buffer, PAGE_SIZE, offset, UIO_WRITE);
+	int result = VOP_WRITE(swap_vnode, &u);
+	if(result){
+		return result;
+	}
+	return 0;
+}
+
+int
+block_read(void * buffer, off_t offset){
+	struct iovec iov;
+	struct uio u;
+
+	uio_kinit(&iov, &u, buffer, PAGE_SIZE, offset, UIO_READ);
+	int result = VOP_READ(swap_vnode, &u);
+	if(result){
+		return result;
+	}
+	return 0;
+}
 
 vaddr_t
 alloc_kpages(unsigned npages)
@@ -40,6 +83,7 @@ alloc_kpages(unsigned npages)
             pa = (i - npages + 1) * PAGE_SIZE;
             for(unsigned k = i - npages + 1; k <= i;k++){
                 coremap[k].cm_status = Dirty;
+				coremap[k].cm_inPTE = false;
                 // coremap[k].cm_size = PAGE_SIZE;
                 if(k == i - npages + 1){
                     coremap[k].cm_len = npages;
@@ -49,6 +93,39 @@ alloc_kpages(unsigned npages)
             return PADDR_TO_KVADDR(pa);
         }
     }
+	//fifo = (cm-entry-fifo + 1) % FIFO
+    spinlock_release(&coremap_lock);
+	return 0;// no
+}
+
+vaddr_t
+user_alloc_onepage()
+{
+	paddr_t pa = 0;
+    spinlock_acquire(&coremap_lock);
+
+    for(unsigned i = cm_addr / PAGE_SIZE ; i < ram_getsize()/PAGE_SIZE; i++){
+        if(coremap[i].cm_status == Free){
+			pa = i * PAGE_SIZE;
+            coremap[i].cm_status = Dirty;
+			coremap[i].cm_inPTE = true;
+            coremap[i].cm_len = 1;
+			coremap[i].cm_pid = curproc->p_PID;
+			spinlock_release(&coremap_lock);
+	        return PADDR_TO_KVADDR(pa);
+        }
+    }
+	//try swap out:
+	//1. find a coremap index
+
+	//2. check its status and block_write(may not need)
+
+	//3. modify its status
+
+	//4. tlbshootdown
+
+	//5. return physical addrspace
+
     spinlock_release(&coremap_lock);
 	return 0;// no
 }
@@ -68,6 +145,8 @@ free_kpages(vaddr_t addr)
     if(coremap[index].cm_len >= 1){
         for(unsigned i = 0; i < coremap[index].cm_len; i++){
             coremap[index + i].cm_status = Free;
+			coremap[index + i].cm_inPTE = false;
+			coremap[index + i].cm_pid = -1;
             // coremap[index + i].cm_size = 0;
         }
         coremap[index].cm_len = 0;
@@ -188,13 +267,13 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	}
 
 	if(found == 1){
-		// if(((ptTmp->pt_pas & PF_R) == PF_R && faulttype == VM_FAULT_READ) || ((ptTmp->pt_pas & PF_W) == PF_W && faulttype == VM_FAULT_WRITE)){
-			paddr1 = ptTmp->pt_pas;// & PAGE_FRAME;
-		// 	//update TLB;
-		// }else{
-		// 	kprintf("permission error in vm_fault");
-		// 	return EFAULT;
-		// }
+
+		//1. check ptTmp status
+
+		//1.1 if in disk, user_alloc_onepage, then swap in
+
+		//1.2 if in memory
+		paddr1 = ptTmp->pt_pas;
 	}else{
 		//create
 		struct pageTableNode * newpt;
@@ -203,7 +282,10 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			return ENOMEM;
 		}
 		newpt->pt_vas = faultaddress;
-		vaddr_t vaddr_tmp = alloc_kpages(1);
+		newpt->pt_isDirty = true;
+		newpt->pt_inDisk = false;
+		newpt->pt_diskOffset = 0;
+		vaddr_t vaddr_tmp = user_alloc_onepage();//alloc_kpages(1);
 		// kprintf("%x\n", vaddr_tmp);
 		if(vaddr_tmp == 0){
 			kfree(newpt);

@@ -260,8 +260,11 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	//pageTable Head
 	if(oldPTtmp != NULL){
 		newas->pageTable->pt_vas = oldPTtmp->pt_vas;
+		newas->pageTable->pt_isDirty = oldPTtmp->pt_isDirty;
+		newas->pageTable->pt_inDisk = oldPTtmp->pt_inDisk;
+		newas->pageTable->pt_diskOffset = oldPTtmp->pt_diskOffset;
 		newas->pageTable->next = NULL;
-		vaddr_tmp = alloc_kpages(1);
+		vaddr_tmp = user_alloc_onepage();//alloc_kpages(1);
 		if(vaddr_tmp == 0){
 			as_destroy(newas);
 			return ENOMEM;
@@ -283,9 +286,12 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 			return ENOMEM;
 		}
 		PTtmp2->pt_vas = oldPTtmp->pt_vas;
+		PTtmp2->pt_isDirty = oldPTtmp->pt_isDirty;
+		PTtmp2->pt_inDisk = oldPTtmp->pt_inDisk;
+		PTtmp2->pt_diskOffset = oldPTtmp->pt_diskOffset;
 		PTtmp2->next = NULL;
 		//memory
-		vaddr_tmp = alloc_kpages(1);
+		vaddr_tmp = user_alloc_onepage();//alloc_kpages(1);
 		if(vaddr_tmp == 0){
 			as_destroy(newas);
 			return ENOMEM;
