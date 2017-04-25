@@ -53,7 +53,7 @@ struct pageTableNode{
     paddr_t pt_pas;
     bool pt_isDirty;
     bool pt_inDisk;
-    off_t pt_diskOffset;
+    unsigned pt_bm_index;
     // int pt_permission;
     struct pageTableNode *next;
 };

@@ -88,10 +88,14 @@ as_destroy(struct addrspace *as)
 		ptTmp2 = ptTmp;
 		ptTmp = ptTmp->next;
 		if(ptTmp2->pt_inDisk){
-			KASSERT(bitmap_isset(vm_bitmap, ptTmp2->pt_diskOffset / PAGE_SIZE) == true);
-			bitmap_unmark(vm_bitmap, ptTmp2->pt_diskOffset / PAGE_SIZE);
+			KASSERT(bitmap_isset(vm_bitmap, ptTmp2->pt_bm_index) != 0);
+			bitmap_unmark(vm_bitmap, ptTmp2->pt_bm_index);
 		}else{
 			free_kpages(PADDR_TO_KVADDR(ptTmp2->pt_pas));
+			if(!ptTmp2->pt_isDirty){
+				KASSERT(bitmap_isset(vm_bitmap, ptTmp2->pt_bm_index) != 0);
+				bitmap_unmark(vm_bitmap, ptTmp2->pt_bm_index);
+			}
 		}
 		kfree(ptTmp2);
 	}
@@ -267,7 +271,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		newas->pageTable->pt_vas = oldPTtmp->pt_vas;
 		newas->pageTable->pt_isDirty = true;
 		newas->pageTable->pt_inDisk = false;
-		newas->pageTable->pt_diskOffset = 0;
+		newas->pageTable->pt_bm_index = 0;
 		newas->pageTable->next = NULL;
 		vaddr_tmp = user_alloc_onepage();//alloc_kpages(1);
 		if(vaddr_tmp == 0){
@@ -277,7 +281,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		newas->pageTable->pt_pas = vaddr_tmp - MIPS_KSEG0;
 		bzero((void *)PADDR_TO_KVADDR(newas->pageTable->pt_pas), 1 * PAGE_SIZE);
 		if(oldPTtmp->pt_inDisk){
-			if(block_read((void *)PADDR_TO_KVADDR(newas->pageTable->pt_pas), oldPTtmp->pt_diskOffset)){
+			if(block_read((void *)PADDR_TO_KVADDR(newas->pageTable->pt_pas), oldPTtmp->pt_bm_index * PAGE_SIZE)){
 				kprintf("block_read error in as_copy\n");
 			}
 		}else{
@@ -299,7 +303,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		PTtmp2->pt_vas = oldPTtmp->pt_vas;
 		PTtmp2->pt_isDirty = true;
 		PTtmp2->pt_inDisk = false;
-		PTtmp2->pt_diskOffset = 0;
+		PTtmp2->pt_bm_index = 0;
 		PTtmp2->next = NULL;
 		//memory
 		vaddr_tmp = user_alloc_onepage();//alloc_kpages(1);
@@ -310,7 +314,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		PTtmp2->pt_pas = vaddr_tmp - MIPS_KSEG0;
 		bzero((void *)PADDR_TO_KVADDR(PTtmp2->pt_pas), 1 * PAGE_SIZE);
 		if(oldPTtmp->pt_inDisk){
-			if(block_read((void *)PADDR_TO_KVADDR(PTtmp2->pt_pas), oldPTtmp->pt_diskOffset)){
+			if(block_read((void *)PADDR_TO_KVADDR(PTtmp2->pt_pas), oldPTtmp->pt_bm_index * PAGE_SIZE)){
 				kprintf("block_read error in as_copy\n");
 			}
 		}else{

@@ -17,6 +17,8 @@
 #include <uio.h>
 //bitmap
 #include <bitmap.h>
+//lock
+#include <synch.h>
 
 
 /*
@@ -24,6 +26,7 @@
  */
 static struct spinlock coremap_lock = SPINLOCK_INITIALIZER;
 // static int fifo = 0;
+static struct lock * swap_lock;
 static struct vnode * swap_vnode;
 
 void
@@ -38,6 +41,8 @@ vm_bootstrap(void)
 		//2 bitmap create
 		vm_bitmap = bitmap_create(5 * 1024 * 1024 / PAGE_SIZE);
 		KASSERT(vm_bitmap != NULL);
+		swap_lock = lock_create("swap_lock");
+		KASSERT(swap_lock != NULL);
 	}
 }
 
@@ -47,10 +52,13 @@ block_write(void *buffer, off_t offset/*default size: PAGE_SIZE*/){
 	struct uio u;
 
 	uio_kinit(&iov, &u, buffer, PAGE_SIZE, offset, UIO_WRITE);
+	lock_acquire(swap_lock);
 	int result = VOP_WRITE(swap_vnode, &u);
+	lock_release(swap_lock);
 	if(result){
 		return result;
 	}
+
 	return 0;
 }
 
@@ -60,7 +68,9 @@ block_read(void * buffer, off_t offset){
 	struct uio u;
 
 	uio_kinit(&iov, &u, buffer, PAGE_SIZE, offset, UIO_READ);
+	lock_acquire(swap_lock);
 	int result = VOP_READ(swap_vnode, &u);
+	lock_release(swap_lock);
 	if(result){
 		return result;
 	}
@@ -128,6 +138,9 @@ user_alloc_onepage()
 		//2. check its status and block_write(may not need)
 		//2.1 find pid and pagetablenode
 		pid_t tmp_pid = coremap[victim].cm_pid;
+
+		spinlock_release(&coremap_lock);
+
 		struct pageTableNode * tmp_ptNode = procTable[tmp_pid]->p_addrspace->pageTable;
 		while(tmp_ptNode != NULL){
 			if(tmp_ptNode->pt_pas / PAGE_SIZE == victim){
@@ -137,26 +150,27 @@ user_alloc_onepage()
 		}
 		pa = tmp_ptNode->pt_pas;
 		//2.2 check status
-		if(!tmp_ptNode->pt_isDirty){
+		if(tmp_ptNode->pt_isDirty){
 			//block_write
 			unsigned index;
 			if(bitmap_alloc(vm_bitmap, &index)){
-				spinlock_release(&coremap_lock);
 				return 0;
 			}
-			KASSERT(bitmap_isset(vm_bitmap, index) == true);
+			KASSERT(bitmap_isset(vm_bitmap, index) != 0);
 			if(block_write((void *)PADDR_TO_KVADDR(pa), index * PAGE_SIZE)){
-				spinlock_release(&coremap_lock);
 				return 0;
 			}
-			tmp_ptNode->pt_diskOffset = index * PAGE_SIZE;
+			tmp_ptNode->pt_bm_index = index;
 		}
 		//3. modify its status
 		tmp_ptNode->pt_inDisk = true;
-		tmp_ptNode->pt_isDirty = false;
+		tmp_ptNode->pt_isDirty = true;
+
+		spinlock_acquire(&coremap_lock);
 		coremap[victim].cm_pid = curproc->p_PID;
 		coremap[victim].cm_inPTE = true;
-		coremap[victim].cm_len = 1;
+		coremap[victim].cm_len = 1;coremap[victim].cm_status = Dirty;
+
 		spinlock_release(&coremap_lock);
 		//4. tlbshootdown
 
@@ -324,7 +338,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			if(vaddr_tmp == 0){
 				return ENOMEM;
 			}
-			if(block_read((void *)vaddr_tmp, ptTmp->pt_diskOffset)){
+			if(block_read((void *)vaddr_tmp, ptTmp->pt_bm_index * PAGE_SIZE)){
 				kprintf("block_read error in vm_fault\n");
 			}
 			//2 change status
@@ -335,12 +349,17 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			KASSERT((paddr1 & PAGE_FRAME) == paddr1);
 			if(faulttype == VM_FAULT_READ){
 				ptTmp->pt_isDirty = false;
+				spinlock_acquire(&coremap_lock);
 				coremap[paddr1 / PAGE_SIZE].cm_status = Clean;
+				spinlock_release(&coremap_lock);
 			}
 			if(faulttype == VM_FAULT_WRITE){
 				ptTmp->pt_isDirty = true;
+				spinlock_acquire(&coremap_lock);
 				coremap[paddr1 / PAGE_SIZE].cm_status = Dirty;
-
+				spinlock_release(&coremap_lock);
+				KASSERT(bitmap_isset(vm_bitmap, ptTmp->pt_bm_index) != 0);
+				// bitmap_unmark(vm_bitmap, ptTmp->pt_bm_index / PAGE_SIZE);
 			}
 		}else{
 			//1.2 if in memory
@@ -356,7 +375,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		newpt->pt_vas = faultaddress;
 		newpt->pt_isDirty = true;
 		newpt->pt_inDisk = false;
-		newpt->pt_diskOffset = 0;
+		newpt->pt_bm_index = 0;
 		vaddr_t vaddr_tmp = user_alloc_onepage();//alloc_kpages(1);
 		// kprintf("%x\n", vaddr_tmp);
 		if(vaddr_tmp == 0){
