@@ -40,7 +40,7 @@
 #include <proc.h>
 #include <current.h>
 #include <mips/tlb.h>
-
+#include <bitmap.h>
 /*
  * Note! If OPT_DUMBVM is set, as is the case until you start the VM
  * assignment, this file is not compiled or linked or in any way
@@ -87,7 +87,12 @@ as_destroy(struct addrspace *as)
 	while(ptTmp != NULL){
 		ptTmp2 = ptTmp;
 		ptTmp = ptTmp->next;
-		free_kpages(PADDR_TO_KVADDR(ptTmp2->pt_pas));
+		if(ptTmp2->pt_inDisk){
+			KASSERT(bitmap_isset(vm_bitmap, ptTmp2->pt_diskOffset / PAGE_SIZE) == true);
+			bitmap_unmark(vm_bitmap, ptTmp2->pt_diskOffset / PAGE_SIZE);
+		}else{
+			free_kpages(PADDR_TO_KVADDR(ptTmp2->pt_pas));
+		}
 		kfree(ptTmp2);
 	}
 
@@ -260,9 +265,9 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	//pageTable Head
 	if(oldPTtmp != NULL){
 		newas->pageTable->pt_vas = oldPTtmp->pt_vas;
-		newas->pageTable->pt_isDirty = oldPTtmp->pt_isDirty;
-		newas->pageTable->pt_inDisk = oldPTtmp->pt_inDisk;
-		newas->pageTable->pt_diskOffset = oldPTtmp->pt_diskOffset;
+		newas->pageTable->pt_isDirty = true;
+		newas->pageTable->pt_inDisk = false;
+		newas->pageTable->pt_diskOffset = 0;
 		newas->pageTable->next = NULL;
 		vaddr_tmp = user_alloc_onepage();//alloc_kpages(1);
 		if(vaddr_tmp == 0){
@@ -271,9 +276,15 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		}
 		newas->pageTable->pt_pas = vaddr_tmp - MIPS_KSEG0;
 		bzero((void *)PADDR_TO_KVADDR(newas->pageTable->pt_pas), 1 * PAGE_SIZE);
-		memmove((void *)PADDR_TO_KVADDR(newas->pageTable->pt_pas),
-			(const void *)PADDR_TO_KVADDR(oldPTtmp->pt_pas),
-			1*PAGE_SIZE);
+		if(oldPTtmp->pt_inDisk){
+			if(block_read((void *)PADDR_TO_KVADDR(newas->pageTable->pt_pas), oldPTtmp->pt_diskOffset)){
+				kprintf("block_read error in as_copy\n");
+			}
+		}else{
+			memmove((void *)PADDR_TO_KVADDR(newas->pageTable->pt_pas),
+				(const void *)PADDR_TO_KVADDR(oldPTtmp->pt_pas),
+				1*PAGE_SIZE);
+		}
 	}
 	//copy pageTable
 	struct pageTableNode *PTtmp = newas->pageTable;
@@ -286,9 +297,9 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 			return ENOMEM;
 		}
 		PTtmp2->pt_vas = oldPTtmp->pt_vas;
-		PTtmp2->pt_isDirty = oldPTtmp->pt_isDirty;
-		PTtmp2->pt_inDisk = oldPTtmp->pt_inDisk;
-		PTtmp2->pt_diskOffset = oldPTtmp->pt_diskOffset;
+		PTtmp2->pt_isDirty = true;
+		PTtmp2->pt_inDisk = false;
+		PTtmp2->pt_diskOffset = 0;
 		PTtmp2->next = NULL;
 		//memory
 		vaddr_tmp = user_alloc_onepage();//alloc_kpages(1);
@@ -298,9 +309,16 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		}
 		PTtmp2->pt_pas = vaddr_tmp - MIPS_KSEG0;
 		bzero((void *)PADDR_TO_KVADDR(PTtmp2->pt_pas), 1 * PAGE_SIZE);
-		memmove((void *)PADDR_TO_KVADDR(PTtmp2->pt_pas),
-			(const void *)PADDR_TO_KVADDR(oldPTtmp->pt_pas),
-			1*PAGE_SIZE);
+		if(oldPTtmp->pt_inDisk){
+			if(block_read((void *)PADDR_TO_KVADDR(PTtmp2->pt_pas), oldPTtmp->pt_diskOffset)){
+				kprintf("block_read error in as_copy\n");
+			}
+		}else{
+			memmove((void *)PADDR_TO_KVADDR(PTtmp2->pt_pas),
+				(const void *)PADDR_TO_KVADDR(oldPTtmp->pt_pas),
+				1*PAGE_SIZE);
+		}
+
 		//link
 		PTtmp->next = PTtmp2;
 		PTtmp = PTtmp->next;

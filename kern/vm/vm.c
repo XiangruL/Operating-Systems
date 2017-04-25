@@ -18,6 +18,7 @@
 //bitmap
 #include <bitmap.h>
 
+
 /*
  * Wrap ram_stealmem in a spinlock.
  */
@@ -34,10 +35,10 @@ vm_bootstrap(void)
 		vm_swapenabled = false;
 	}else{
 		vm_swapenabled = true;
+		//2 bitmap create
+		vm_bitmap = bitmap_create(5 * 1024 * 1024 / PAGE_SIZE);
+		KASSERT(vm_bitmap != NULL);
 	}
-	//2 bitmap create
-	vm_bitmap = bitmap_create(5 * 1024 * 1024 / PAGE_SIZE);
-
 }
 
 int
@@ -93,7 +94,6 @@ alloc_kpages(unsigned npages)
             return PADDR_TO_KVADDR(pa);
         }
     }
-	//fifo = (cm-entry-fifo + 1) % FIFO
     spinlock_release(&coremap_lock);
 	return 0;// no
 }
@@ -115,19 +115,69 @@ user_alloc_onepage()
 	        return PADDR_TO_KVADDR(pa);
         }
     }
-	//try swap out:
-	//1. find a coremap index
+	//try swap out:(check vm_swapenabled at very first)
+	if(vm_swapenabled){
+		//1. select a coremap index to evict as a victim
+		unsigned victim;
+		while(1){
+			victim = random() % cm_num;
+			if(coremap[victim].cm_inPTE){
+				break;
+			}
+		}
+		//2. check its status and block_write(may not need)
+		//2.1 find pid and pagetablenode
+		pid_t tmp_pid = coremap[victim].cm_pid;
+		struct pageTableNode * tmp_ptNode = procTable[tmp_pid]->p_addrspace->pageTable;
+		while(tmp_ptNode != NULL){
+			if(tmp_ptNode->pt_pas / PAGE_SIZE == victim){
+				break;
+			}
+			tmp_ptNode = tmp_ptNode->next;
+		}
+		pa = tmp_ptNode->pt_pas;
+		//2.2 check status
+		if(!tmp_ptNode->pt_isDirty){
+			//block_write
+			unsigned index;
+			if(bitmap_alloc(vm_bitmap, &index)){
+				spinlock_release(&coremap_lock);
+				return 0;
+			}
+			KASSERT(bitmap_isset(vm_bitmap, index) == true);
+			if(block_write((void *)PADDR_TO_KVADDR(pa), index * PAGE_SIZE)){
+				spinlock_release(&coremap_lock);
+				return 0;
+			}
+			tmp_ptNode->pt_diskOffset = index * PAGE_SIZE;
+		}
+		//3. modify its status
+		tmp_ptNode->pt_inDisk = true;
+		tmp_ptNode->pt_isDirty = false;
+		coremap[victim].cm_pid = curproc->p_PID;
+		coremap[victim].cm_inPTE = true;
+		coremap[victim].cm_len = 1;
+		spinlock_release(&coremap_lock);
+		//4. tlbshootdown
 
-	//2. check its status and block_write(may not need)
+		KASSERT((pa & PAGE_FRAME) == pa);
+		int spl;
+		uint32_t ehi, elo;
+		spl = splhigh();
+		ehi = tmp_ptNode->pt_vas;
+		elo = pa;
+		int i = tlb_probe(ehi, elo);
+		if(i >= 0){
+			tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
+		}
+		splx(spl);
 
-	//3. modify its status
-
-	//4. tlbshootdown
-
-	//5. return physical addrspace
+		//5. return physical addrspace
+		return PADDR_TO_KVADDR(pa);
+	}
 
     spinlock_release(&coremap_lock);
-	return 0;// no
+	return 0;
 }
 
 void
@@ -184,7 +234,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	vaddr_t vbase, vtop, stackbase, stacktop;
 	paddr_t paddr1 = 0x0;
 	struct addrspace *as;
-	int spl;
 
 	faultaddress &= PAGE_FRAME;
 
@@ -269,11 +318,34 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	if(found == 1){
 
 		//1. check ptTmp status
+		if(ptTmp->pt_inDisk){
+			//1.1 if in disk, user_alloc_onepage, then swap in
+			vaddr_t vaddr_tmp = user_alloc_onepage();//alloc_kpages(1);
+			if(vaddr_tmp == 0){
+				return ENOMEM;
+			}
+			if(block_read((void *)vaddr_tmp, ptTmp->pt_diskOffset)){
+				kprintf("block_read error in vm_fault\n");
+			}
+			//2 change status
+			ptTmp->pt_pas = vaddr_tmp - MIPS_KSEG0;
+			paddr1 = ptTmp->pt_pas;
+			ptTmp->pt_inDisk = false;
+			KASSERT(coremap[paddr1 / PAGE_SIZE].cm_pid == curproc->p_PID);
+			KASSERT((paddr1 & PAGE_FRAME) == paddr1);
+			if(faulttype == VM_FAULT_READ){
+				ptTmp->pt_isDirty = false;
+				coremap[paddr1 / PAGE_SIZE].cm_status = Clean;
+			}
+			if(faulttype == VM_FAULT_WRITE){
+				ptTmp->pt_isDirty = true;
+				coremap[paddr1 / PAGE_SIZE].cm_status = Dirty;
 
-		//1.1 if in disk, user_alloc_onepage, then swap in
-
-		//1.2 if in memory
-		paddr1 = ptTmp->pt_pas;
+			}
+		}else{
+			//1.2 if in memory
+			paddr1 = ptTmp->pt_pas;
+		}
 	}else{
 		//create
 		struct pageTableNode * newpt;
@@ -306,6 +378,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	//update TLB
 	/* make sure it's page-aligned */
 	KASSERT((paddr1 & PAGE_FRAME) == paddr1);
+	int spl;
 	uint32_t ehi, elo;
 	/* Disable interrupts on this CPU while frobbing the TLB. */
 	spl = splhigh();

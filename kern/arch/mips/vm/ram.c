@@ -163,11 +163,13 @@ void cm_init(void) {
 	int fixedPage = ( firstpaddr + PAGE_SIZE - 1 )/ PAGE_SIZE;
 	for(int i = 0; i<fixedPage; i++){
 		coremap[i].cm_status = Fixed;
+		coremap[i].cm_len = 0;
+		coremap[i].cm_pid = -1;
+		coremap[i].cm_inPTE = false;
 	}
 	for(int i = fixedPage; i < cm_num; i++){
 		coremap[i].cm_status = Free;
 		// coremap[i].cm_size = 0;
-		coremap[i].cm_len = 0;
 		// coremap[i].cm_fifo = 0;
 		coremap[i].cm_pid = -1;
 		coremap[i].cm_inPTE = false;
