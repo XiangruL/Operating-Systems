@@ -17,6 +17,7 @@
 #include <uio.h>
 //bitmap
 #include <bitmap.h>
+#include <kern/stat.h>
 //lock
 #include <synch.h>
 
@@ -39,7 +40,10 @@ vm_bootstrap(void)
 	}else{
 		vm_swapenabled = true;
 		//2 bitmap create
-		vm_bitmap = bitmap_create(5 * 1024 * 1024 / PAGE_SIZE);
+		struct stat st;
+		VOP_STAT(swap_vnode, &st);
+		// kprintf("%d", (int)(st.st_size));
+		vm_bitmap = bitmap_create(st.st_size / PAGE_SIZE);
 		KASSERT(vm_bitmap != NULL);
 		swap_lock = lock_create("swap_lock");
 		KASSERT(swap_lock != NULL);
@@ -77,6 +81,106 @@ block_read(void * buffer, off_t offset){
 	return 0;
 }
 
+
+
+static
+paddr_t
+swap_out(enum cm_status_t status, unsigned npages){
+
+	//try swap out:(check vm_swapenabled at very first)
+	if(vm_swapenabled){
+		paddr_t pa;
+		spinlock_acquire(&coremap_lock);
+		//1. select a coremap index to evict as a victim
+		unsigned victim = 0;
+		if(status == Fixed){
+			unsigned tmp = 0;
+			for(unsigned i = cm_addr / PAGE_SIZE ; i < cm_num; i++){
+		        if(coremap[i].cm_status != Fixed){
+		            tmp++;
+		        }else{
+		            tmp = 0;
+		        }
+		        if(tmp == npages){
+		            victim = (i - npages + 1);
+		        }
+		    }
+		}else{
+			while(1){
+				victim = random() % cm_num;
+				if(coremap[victim].cm_status != Fixed){
+					break;
+				}
+			}
+		}
+		spinlock_release(&coremap_lock);
+
+		if(victim == 0){
+			return 0;
+		}
+
+		pa = victim * PAGE_SIZE;
+
+		for(unsigned k = victim; k < victim + npages ;k++){
+			//2. check its status and block_write(may not need)
+			//2.1 find pid and pagetablenode
+			spinlock_acquire(&coremap_lock);
+			pid_t tmp_pid = coremap[k].cm_pid;
+			spinlock_release(&coremap_lock);
+
+			struct pageTableNode * tmp_ptNode = procTable[tmp_pid]->p_addrspace->pageTable;
+			while(tmp_ptNode != NULL){
+				if(tmp_ptNode->pt_pas == k * PAGE_SIZE){
+					break;
+				}
+				tmp_ptNode = tmp_ptNode->next;
+			}
+			KASSERT(tmp_ptNode->pt_pas == k * PAGE_SIZE);
+			//2.2 check status
+			if(tmp_ptNode->pt_isDirty){
+				unsigned index;
+				if(bitmap_alloc(vm_bitmap, &index)){
+					return 0;
+				}
+				KASSERT(bitmap_isset(vm_bitmap, index) != 0);		//block_write
+				if(block_write((void *)PADDR_TO_KVADDR(k * PAGE_SIZE), index * PAGE_SIZE)){
+					return 0;
+				}
+				tmp_ptNode->pt_bm_index = index;
+			}
+
+
+			//3. modify its status
+			tmp_ptNode->pt_inDisk = true;
+			tmp_ptNode->pt_isDirty = true;
+
+			spinlock_acquire(&coremap_lock);
+			coremap[k].cm_pid = curproc->p_PID;
+			// coremap[victim].cm_inPTE = true;
+			coremap[k].cm_len = 1;
+			coremap[k].cm_status = status;
+
+			spinlock_release(&coremap_lock);
+			//4. tlbshootdown
+
+			int spl;
+			uint32_t ehi, elo;
+			spl = splhigh();
+			ehi = tmp_ptNode->pt_vas;
+			elo = k * PAGE_SIZE;
+			int i = tlb_probe(ehi, elo);
+			if(i >= 0){
+				tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
+			}
+			splx(spl);
+		}
+		//5. return physical addrspace
+		return pa;
+	}
+	return 0;
+}
+
+
 vaddr_t
 alloc_kpages(unsigned npages)
 {
@@ -84,7 +188,7 @@ alloc_kpages(unsigned npages)
     unsigned tmp = 0;
     spinlock_acquire(&coremap_lock);
 
-    for(unsigned i = cm_addr / PAGE_SIZE ; i < ram_getsize()/PAGE_SIZE; i++){
+    for(unsigned i = cm_addr / PAGE_SIZE ; i < cm_num; i++){
         if(coremap[i].cm_status == Free){
             tmp++;
         }else{
@@ -93,9 +197,7 @@ alloc_kpages(unsigned npages)
         if(tmp == npages){
             pa = (i - npages + 1) * PAGE_SIZE;
             for(unsigned k = i - npages + 1; k <= i;k++){
-                coremap[k].cm_status = Dirty;
-				coremap[k].cm_inPTE = false;
-                // coremap[k].cm_size = PAGE_SIZE;
+                coremap[k].cm_status = Fixed;
                 if(k == i - npages + 1){
                     coremap[k].cm_len = npages;
                 }
@@ -105,8 +207,15 @@ alloc_kpages(unsigned npages)
         }
     }
     spinlock_release(&coremap_lock);
-	return 0;// no
+
+	pa = swap_out(Fixed, npages);
+	if(pa == 0){
+		return 0;
+	}
+
+	return PADDR_TO_KVADDR(pa);// no
 }
+
 
 vaddr_t
 user_alloc_onepage()
@@ -114,86 +223,26 @@ user_alloc_onepage()
 	paddr_t pa = 0;
     spinlock_acquire(&coremap_lock);
 
-    for(unsigned i = cm_addr / PAGE_SIZE ; i < ram_getsize()/PAGE_SIZE; i++){
+    for(unsigned i = cm_addr / PAGE_SIZE ; i < cm_num; i++){
         if(coremap[i].cm_status == Free){
 			pa = i * PAGE_SIZE;
             coremap[i].cm_status = Dirty;
-			coremap[i].cm_inPTE = true;
+			// coremap[i].cm_inPTE = true;
             coremap[i].cm_len = 1;
 			coremap[i].cm_pid = curproc->p_PID;
 			spinlock_release(&coremap_lock);
 	        return PADDR_TO_KVADDR(pa);
         }
     }
-	//try swap out:(check vm_swapenabled at very first)
-	if(vm_swapenabled){
-		//1. select a coremap index to evict as a victim
-		unsigned victim;
-		while(1){
-			victim = random() % cm_num;
-			if(coremap[victim].cm_inPTE){
-				break;
-			}
-		}
-		//2. check its status and block_write(may not need)
-		//2.1 find pid and pagetablenode
-		pid_t tmp_pid = coremap[victim].cm_pid;
 
-		spinlock_release(&coremap_lock);
+	spinlock_release(&coremap_lock);
 
-		struct pageTableNode * tmp_ptNode = procTable[tmp_pid]->p_addrspace->pageTable;
-		while(tmp_ptNode != NULL){
-			if(tmp_ptNode->pt_pas == victim * PAGE_SIZE){
-				break;
-			}
-			tmp_ptNode = tmp_ptNode->next;
-		}
-		KASSERT(tmp_ptNode->pt_pas == victim * PAGE_SIZE);
-		pa = tmp_ptNode->pt_pas;
-		//2.2 check status
-		if(tmp_ptNode->pt_isDirty){
-			//block_write
-			unsigned index;
-			if(bitmap_alloc(vm_bitmap, &index)){
-				return 0;
-			}
-			KASSERT(bitmap_isset(vm_bitmap, index) != 0);
-			if(block_write((void *)PADDR_TO_KVADDR(pa), index * PAGE_SIZE)){
-				return 0;
-			}
-			tmp_ptNode->pt_bm_index = index;
-		}
-		//3. modify its status
-		tmp_ptNode->pt_inDisk = true;
-		tmp_ptNode->pt_isDirty = true;
-
-		spinlock_acquire(&coremap_lock);
-		coremap[victim].cm_pid = curproc->p_PID;
-		coremap[victim].cm_inPTE = true;
-		coremap[victim].cm_len = 1;
-		coremap[victim].cm_status = Dirty;
-
-		spinlock_release(&coremap_lock);
-		//4. tlbshootdown
-
-		KASSERT((pa & PAGE_FRAME) == pa);
-		int spl;
-		uint32_t ehi, elo;
-		spl = splhigh();
-		ehi = tmp_ptNode->pt_vas;
-		elo = pa;
-		int i = tlb_probe(ehi, elo);
-		if(i >= 0){
-			tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
-		}
-		splx(spl);
-
-		//5. return physical addrspace
-		return PADDR_TO_KVADDR(pa);
+	//try swap_out
+	pa = swap_out(Dirty, 1);
+	if(pa == 0){
+		return 0;
 	}
-
-    spinlock_release(&coremap_lock);
-	return 0;
+	return PADDR_TO_KVADDR(pa);
 }
 
 void
@@ -211,9 +260,7 @@ free_kpages(vaddr_t addr)
     if(coremap[index].cm_len >= 1){
         for(unsigned i = 0; i < coremap[index].cm_len; i++){
             coremap[index + i].cm_status = Free;
-			coremap[index + i].cm_inPTE = false;
 			coremap[index + i].cm_pid = -1;
-            // coremap[index + i].cm_size = 0;
         }
         coremap[index].cm_len = 0;
     }
@@ -341,24 +388,19 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 				return ENOMEM;
 			}
 			if(block_read((void *)vaddr_tmp, ptTmp->pt_bm_index * PAGE_SIZE)){
-				kprintf("block_read error in vm_fault\n");
+				panic("block_read error in vm_fault\n");
 			}
+
 			//2 change status
 			ptTmp->pt_pas = vaddr_tmp - MIPS_KSEG0;
 			paddr1 = ptTmp->pt_pas;
 			ptTmp->pt_inDisk = false;
 			KASSERT(coremap[paddr1 / PAGE_SIZE].cm_pid == curproc->p_PID);
 			KASSERT((paddr1 & PAGE_FRAME) == paddr1);
-			if(faulttype == VM_FAULT_READ){
-				ptTmp->pt_isDirty = false;
-				coremap[paddr1 / PAGE_SIZE].cm_status = Clean;
-			}
-			if(faulttype == VM_FAULT_WRITE){
-				ptTmp->pt_isDirty = true;
-				coremap[paddr1 / PAGE_SIZE].cm_status = Dirty;
-				KASSERT(bitmap_isset(vm_bitmap, ptTmp->pt_bm_index) != 0);
-				bitmap_unmark(vm_bitmap, ptTmp->pt_bm_index);
-			}
+
+			ptTmp->pt_isDirty = true;
+			KASSERT(bitmap_isset(vm_bitmap, ptTmp->pt_bm_index) != 0);
+			bitmap_unmark(vm_bitmap, ptTmp->pt_bm_index);
 		}else{
 			//1.2 if in memory
 			paddr1 = ptTmp->pt_pas;
@@ -397,25 +439,15 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	/* Disable interrupts on this CPU while frobbing the TLB. */
 	spl = splhigh();
 	ehi = faultaddress;
-
-	int i;
-	for (i=0; i<NUM_TLB; i++) {
-		tlb_read(&ehi, &elo, i);
-		if((ehi & PAGE_FRAME) == faultaddress || !(elo & TLBLO_VALID)){
-			ehi = faultaddress;
-			elo = paddr1 | TLBLO_DIRTY | TLBLO_VALID;
-			DEBUG(DB_VM, "vm: 0x%x -> 0x%x\n", faultaddress, paddr1);
-			tlb_write(ehi, elo, i);
-			splx(spl);
-			return 0;
-		}else{
-			continue;
-		}
-
+	elo = paddr1;
+	int i = tlb_probe(ehi, elo);
+	if(i >= 0){
+		tlb_write(ehi, elo | TLBLO_DIRTY | TLBLO_VALID, i);
+		splx(spl);
+		return 0;
+	}else{
+		tlb_random(ehi, elo | TLBLO_DIRTY | TLBLO_VALID);
+		splx(spl);
+		return 0;
 	}
-	ehi = faultaddress;
-	elo = paddr1 | TLBLO_DIRTY | TLBLO_VALID;
-	tlb_random(ehi, elo);
-	splx(spl);
-	return 0;
 }

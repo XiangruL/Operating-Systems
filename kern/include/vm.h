@@ -46,7 +46,6 @@
 #define VM_STACKPAGES    1024//stacktest need 200 * 4KB stack
 
 # define SWAP_FILENAME "lhd0raw:"
-#define FIFO 2
 
 enum cm_status_t { Fixed, Clean, Dirty, Free};
 
@@ -58,14 +57,13 @@ struct coremap_entry{
     */
     // size_t cm_size;
     unsigned cm_len;
-    bool cm_inPTE;
     pid_t cm_pid;
     // int cm_fifo;
     //cm_pid
 };
 
 paddr_t cm_addr;//extern
-int cm_num;
+unsigned cm_num;
 
 bool vm_swapenabled;
 

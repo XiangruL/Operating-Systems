@@ -165,14 +165,14 @@ void cm_init(void) {
 		coremap[i].cm_status = Fixed;
 		coremap[i].cm_len = 0;
 		coremap[i].cm_pid = -1;
-		coremap[i].cm_inPTE = false;
+		// coremap[i].cm_inPTE = false;
 	}
-	for(int i = fixedPage; i < cm_num; i++){
+	for(unsigned i = fixedPage; i < cm_num; i++){
 		coremap[i].cm_status = Free;
 		// coremap[i].cm_size = 0;
 		// coremap[i].cm_fifo = 0;
 		coremap[i].cm_pid = -1;
-		coremap[i].cm_inPTE = false;
+		// coremap[i].cm_inPTE = false;
 	}
 
 }

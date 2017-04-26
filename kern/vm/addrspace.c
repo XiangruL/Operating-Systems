@@ -281,9 +281,10 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		newas->pageTable->pt_pas = vaddr_tmp - MIPS_KSEG0;
 		bzero((void *)PADDR_TO_KVADDR(newas->pageTable->pt_pas), 1 * PAGE_SIZE);
 		if(oldPTtmp->pt_inDisk){
-			if(block_read((void *)PADDR_TO_KVADDR(newas->pageTable->pt_pas), oldPTtmp->pt_bm_index * PAGE_SIZE)){
-				kprintf("block_read error in as_copy\n");
-			}
+			kprintf("pt_inDisk in as_copy\n");
+			// if(block_read((void *)PADDR_TO_KVADDR(newas->pageTable->pt_pas), oldPTtmp->pt_bm_index * PAGE_SIZE)){
+			// 	kprintf("block_read error in as_copy\n");
+			// }
 		}else{
 			memmove((void *)PADDR_TO_KVADDR(newas->pageTable->pt_pas),
 				(const void *)PADDR_TO_KVADDR(oldPTtmp->pt_pas),
@@ -314,9 +315,11 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		PTtmp2->pt_pas = vaddr_tmp - MIPS_KSEG0;
 		bzero((void *)PADDR_TO_KVADDR(PTtmp2->pt_pas), 1 * PAGE_SIZE);
 		if(oldPTtmp->pt_inDisk){
-			if(block_read((void *)PADDR_TO_KVADDR(PTtmp2->pt_pas), oldPTtmp->pt_bm_index * PAGE_SIZE)){
-				kprintf("block_read error in as_copy\n");
-			}
+			kprintf("pt_inDisk in as_copy\n");
+
+			// if(block_read((void *)PADDR_TO_KVADDR(PTtmp2->pt_pas), oldPTtmp->pt_bm_index * PAGE_SIZE)){
+			// 	kprintf("block_read error in as_copy\n");
+			// }
 		}else{
 			memmove((void *)PADDR_TO_KVADDR(PTtmp2->pt_pas),
 				(const void *)PADDR_TO_KVADDR(oldPTtmp->pt_pas),
