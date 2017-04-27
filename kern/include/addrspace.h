@@ -39,7 +39,7 @@
 #include "opt-dumbvm.h"
 
 struct vnode;
-
+struct lock;
 
 /*
  * Address space - data structure associated with the virtual memory
@@ -81,6 +81,7 @@ struct addrspace {
         struct regionInfoNode *regionInfo;
         vaddr_t heap_vbase;
         size_t heap_vbound;
+        struct lock * as_ptLock;
         // size_t heap_page_used;
         // paddr_t as_stackpbase;
 

@@ -41,6 +41,7 @@
 #include <current.h>
 #include <mips/tlb.h>
 #include <bitmap.h>
+#include <synch.h>
 /*
  * Note! If OPT_DUMBVM is set, as is the case until you start the VM
  * assignment, this file is not compiled or linked or in any way
@@ -64,6 +65,11 @@ as_create(void)
 	as->regionInfo = NULL;
 	as->heap_vbase = 0;
 	as->heap_vbound = 0;
+	as->as_ptLock = lock_create("as_lock");
+	if(as->as_ptLock == NULL){
+		kfree(as);
+		return NULL;
+	}
 	// as->heap_page_used = 0;
 	return as;
 }
@@ -83,7 +89,7 @@ as_destroy(struct addrspace *as)
 	struct pageTableNode * ptTmp = as->pageTable;
 	struct pageTableNode * ptTmp2 = NULL;
 
-
+	// lock_acquire(as->as_ptLock);
 	while(ptTmp != NULL){
 		ptTmp2 = ptTmp;
 		ptTmp = ptTmp->next;
@@ -107,6 +113,8 @@ as_destroy(struct addrspace *as)
 		riTmp = riTmp->next;
 		kfree(riTmp2);
 	}
+	// lock_release(as->as_ptLock);
+	lock_destroy(as->as_ptLock);
 
 	kfree(as);
 }
@@ -281,7 +289,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		newas->pageTable->pt_pas = vaddr_tmp - MIPS_KSEG0;
 		bzero((void *)PADDR_TO_KVADDR(newas->pageTable->pt_pas), 1 * PAGE_SIZE);
 		if(oldPTtmp->pt_inDisk){
-			kprintf("pt_inDisk in as_copy\n");
+			panic("pt_inDisk in as_copy\n");
 			// if(block_read((void *)PADDR_TO_KVADDR(newas->pageTable->pt_pas), oldPTtmp->pt_bm_index * PAGE_SIZE)){
 			// 	kprintf("block_read error in as_copy\n");
 			// }
@@ -315,7 +323,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		PTtmp2->pt_pas = vaddr_tmp - MIPS_KSEG0;
 		bzero((void *)PADDR_TO_KVADDR(PTtmp2->pt_pas), 1 * PAGE_SIZE);
 		if(oldPTtmp->pt_inDisk){
-			kprintf("pt_inDisk in as_copy\n");
+			panic("pt_inDisk in as_copy\n");
 
 			// if(block_read((void *)PADDR_TO_KVADDR(PTtmp2->pt_pas), oldPTtmp->pt_bm_index * PAGE_SIZE)){
 			// 	kprintf("block_read error in as_copy\n");

@@ -173,8 +173,8 @@ lock_create(const char *name)
 void
 lock_destroy(struct lock *lock)
 {
-	KASSERT(lock != NULL && lock->lk_thread == NULL);
-
+	KASSERT(lock != NULL);
+	KASSERT(lock->lk_thread == NULL);
 	// add stuff here as needed
 	// if(!wchan_isempty(lock->lk_wchan, &lock->lk_slk)){
 	// 	spinlock_acquire(&lock->lk_slk);
@@ -453,7 +453,7 @@ rwlock_release_read(struct rwlock *rwlock){
 		if(rwlock->rwlock_writewaiting_count > 0){
 			rwlock->rwlock_write_wait = true;
 		}
-		wchan_wakeall(rwlock->rwlock_wchan, &rwlock->rwlock_slk);	
+		wchan_wakeall(rwlock->rwlock_wchan, &rwlock->rwlock_slk);
 		spinlock_release(&rwlock->rwlock_slk);
 		lock_release(rwlock->rwlock_lk);
 	}else{
