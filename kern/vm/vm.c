@@ -58,7 +58,7 @@ block_write(void *buffer, off_t offset/*default size: PAGE_SIZE*/){
 	struct uio u;
 
 	uio_kinit(&iov, &u, buffer, PAGE_SIZE, offset, UIO_WRITE);
-	kprintf("Write: %d, kvaddr: %x\n", (int)offset/PAGE_SIZE, (int)buffer);
+	// kprintf("Write: %d, kvaddr: %x\n", (int)offset/PAGE_SIZE, (int)buffer);
 
 	int result = VOP_WRITE(swap_vnode, &u);
 	if(result){
@@ -74,7 +74,7 @@ block_read(void * buffer, off_t offset){
 	struct uio u;
 
 	uio_kinit(&iov, &u, buffer, PAGE_SIZE, offset, UIO_READ);
-	kprintf("Read: %d, kvaddr: %x\n", (int)offset/PAGE_SIZE, (int)buffer);
+	// kprintf("Read: %d, kvaddr: %x\n", (int)offset/PAGE_SIZE, (int)buffer);
 	int result = VOP_READ(swap_vnode, &u);
 	if(result){
 		return result;
@@ -154,7 +154,7 @@ swap_out(enum cm_status_t status, unsigned npages){
 					return 0;
 				}
 				KASSERT(bitmap_isset(vm_bitmap, index) != 0);		//block_write
-				kprintf("\nvaddr: %x\n", (int)tmp_ptNode->pt_vas);
+				// kprintf("\nvaddr: %x\n", (int)tmp_ptNode->pt_vas);
 				if(block_write((void *)PADDR_TO_KVADDR(k * PAGE_SIZE), index * PAGE_SIZE)){
 					return 0;
 				}
@@ -422,7 +422,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			KASSERT((paddr1 & PAGE_FRAME) == paddr1);
 			bzero((void *)PADDR_TO_KVADDR(paddr1), PAGE_SIZE);
 
-			kprintf("\nvaddr: %x\n", (int)ptTmp->pt_vas);
+			// kprintf("\nvaddr: %x\n", (int)ptTmp->pt_vas);
 			lock_acquire(swap_lock);
 			if(block_read((void *)PADDR_TO_KVADDR(paddr1), ptTmp->pt_bm_index * PAGE_SIZE)){
 				panic("block_read error in vm_fault\n");
