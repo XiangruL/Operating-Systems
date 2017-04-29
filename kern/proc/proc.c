@@ -144,6 +144,7 @@ proc_create(const char *name)
 		proc->fileTable[i] = NULL;
 	}
 
+	proc->p_thread = curthread;
 	return proc;
 }
 

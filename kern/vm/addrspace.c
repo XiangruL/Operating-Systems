@@ -89,18 +89,43 @@ as_destroy(struct addrspace *as)
 	struct pageTableNode * ptTmp = as->pageTable;
 	struct pageTableNode * ptTmp2 = NULL;
 
-	// lock_acquire(as->as_ptLock);
+	//lock_acquire
+	//1. cm_lock:
+	bool cm_lk_hold_before = false;
+	if(!lock_do_i_hold(cm_lock)){
+		lock_acquire(cm_lock);
+	}else{
+		cm_lk_hold_before = true;
+	}
+	//2. as_ptLock:
+	bool pt_lk_hold_before = false;
+	if(!lock_do_i_hold(as->as_ptLock)){
+		lock_acquire(as->as_ptLock);
+	}else{
+		pt_lk_hold_before = true;
+	}
+
 	while(ptTmp != NULL){
 		ptTmp2 = ptTmp;
 		ptTmp = ptTmp->next;
 		if(ptTmp2->pt_inDisk){
+			//swap_lock acquire
+			lock_acquire(swap_lock);
+
 			KASSERT(bitmap_isset(vm_bitmap, ptTmp2->pt_bm_index) != 0);
 			bitmap_unmark(vm_bitmap, ptTmp2->pt_bm_index);
+			//swap_lock release
+			lock_release(swap_lock);
 		}else{
-			free_kpages(PADDR_TO_KVADDR(ptTmp2->pt_pas));
+			user_free_onepage(PADDR_TO_KVADDR(ptTmp2->pt_pas));
 			if(!ptTmp2->pt_isDirty){
+				//swap_lock acquire
+				lock_acquire(swap_lock);
+
 				KASSERT(bitmap_isset(vm_bitmap, ptTmp2->pt_bm_index) != 0);
 				bitmap_unmark(vm_bitmap, ptTmp2->pt_bm_index);
+				//swap_lock release
+				lock_release(swap_lock);
 			}
 		}
 		kfree(ptTmp2);
@@ -113,7 +138,14 @@ as_destroy(struct addrspace *as)
 		riTmp = riTmp->next;
 		kfree(riTmp2);
 	}
-	// lock_release(as->as_ptLock);
+	// lock_release
+	if(!pt_lk_hold_before){
+		lock_release(as->as_ptLock);
+	}
+	if(!cm_lk_hold_before){
+		lock_release(cm_lock);
+	}
+
 	lock_destroy(as->as_ptLock);
 
 	kfree(as);
@@ -267,9 +299,36 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	newas->heap_vbase = old->heap_vbase;
 	newas->heap_vbound = old->heap_vbound;
 
+
+
+
+	//lock_acquire
+	//1. cm_lock:
+	bool cm_lk_hold_before = false;
+	if(!lock_do_i_hold(cm_lock)){
+		lock_acquire(cm_lock);
+	}else{
+		cm_lk_hold_before = true;
+	}
+	//2. as_ptLock:
+	bool pt_lk_hold_before = false;
+	if(!lock_do_i_hold(old->as_ptLock)){
+		lock_acquire(old->as_ptLock);
+	}else{
+		pt_lk_hold_before = true;
+	}
+
+
 	//pageTable
 	newas->pageTable = (struct pageTableNode*)kmalloc(sizeof(struct pageTableNode));
 	if(newas->pageTable == NULL){
+		// lock_release
+		if(!pt_lk_hold_before){
+			lock_release(old->as_ptLock);
+		}
+		if(!cm_lk_hold_before){
+			lock_release(cm_lock);
+		}
 		return ENOMEM;
 	}
 
@@ -284,15 +343,24 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		vaddr_tmp = user_alloc_onepage();//alloc_kpages(1);
 		if(vaddr_tmp == 0){
 			as_destroy(newas);
+			// lock_release
+			if(!pt_lk_hold_before){
+				lock_release(old->as_ptLock);
+			}
+			if(!cm_lk_hold_before){
+				lock_release(cm_lock);
+			}
 			return ENOMEM;
 		}
 		newas->pageTable->pt_pas = vaddr_tmp - MIPS_KSEG0;
 		bzero((void *)PADDR_TO_KVADDR(newas->pageTable->pt_pas), 1 * PAGE_SIZE);
 		if(oldPTtmp->pt_inDisk){
-			panic("pt_inDisk in as_copy\n");
-			// if(block_read((void *)PADDR_TO_KVADDR(newas->pageTable->pt_pas), oldPTtmp->pt_bm_index * PAGE_SIZE)){
-			// 	kprintf("block_read error in as_copy\n");
-			// }
+			// panic("pt_inDisk in as_copy\n");
+			lock_acquire(swap_lock);
+			if(block_read((void *)PADDR_TO_KVADDR(newas->pageTable->pt_pas), oldPTtmp->pt_bm_index * PAGE_SIZE)){
+				kprintf("block_read error in as_copy\n");
+			}
+			lock_release(swap_lock);
 		}else{
 			memmove((void *)PADDR_TO_KVADDR(newas->pageTable->pt_pas),
 				(const void *)PADDR_TO_KVADDR(oldPTtmp->pt_pas),
@@ -307,6 +375,13 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		PTtmp2 = (struct pageTableNode*)kmalloc(sizeof(struct pageTableNode));
 		if(PTtmp2 == NULL){
 			as_destroy(newas);
+			// lock_release
+			if(!pt_lk_hold_before){
+				lock_release(old->as_ptLock);
+			}
+			if(!cm_lk_hold_before){
+				lock_release(cm_lock);
+			}
 			return ENOMEM;
 		}
 		PTtmp2->pt_vas = oldPTtmp->pt_vas;
@@ -318,16 +393,25 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		vaddr_tmp = user_alloc_onepage();//alloc_kpages(1);
 		if(vaddr_tmp == 0){
 			as_destroy(newas);
+			// lock_release
+			if(!pt_lk_hold_before){
+				lock_release(old->as_ptLock);
+			}
+			if(!cm_lk_hold_before){
+				lock_release(cm_lock);
+			}
 			return ENOMEM;
 		}
 		PTtmp2->pt_pas = vaddr_tmp - MIPS_KSEG0;
 		bzero((void *)PADDR_TO_KVADDR(PTtmp2->pt_pas), 1 * PAGE_SIZE);
 		if(oldPTtmp->pt_inDisk){
-			panic("pt_inDisk in as_copy\n");
+			// panic("pt_inDisk in as_copy\n");
 
-			// if(block_read((void *)PADDR_TO_KVADDR(PTtmp2->pt_pas), oldPTtmp->pt_bm_index * PAGE_SIZE)){
-			// 	kprintf("block_read error in as_copy\n");
-			// }
+			lock_acquire(swap_lock);
+			if(block_read((void *)PADDR_TO_KVADDR(newas->pageTable->pt_pas), oldPTtmp->pt_bm_index * PAGE_SIZE)){
+				kprintf("block_read error in as_copy\n");
+			}
+			lock_release(swap_lock);
 		}else{
 			memmove((void *)PADDR_TO_KVADDR(PTtmp2->pt_pas),
 				(const void *)PADDR_TO_KVADDR(oldPTtmp->pt_pas),
@@ -339,6 +423,16 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		PTtmp = PTtmp->next;
 		oldPTtmp = oldPTtmp->next;
 	}
+
+
+	// lock_release
+	if(!pt_lk_hold_before){
+		lock_release(old->as_ptLock);
+	}
+	if(!cm_lk_hold_before){
+		lock_release(cm_lock);
+	}
+
 
 	//regionInfo
 	newas->regionInfo = (struct regionInfoNode*)kmalloc(sizeof(struct regionInfoNode));

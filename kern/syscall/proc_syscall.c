@@ -121,6 +121,7 @@ int sys_waitpid(pid_t pid, int * status, int options, pid_t *retval) {
     spinlock_cleanup(&p->p_lock);
     cv_destroy(p->p_cv);
     p->p_addrspace = NULL;
+    p->p_thread = NULL;
     kfree(p->p_name);
     procTable[p->p_PID] = NULL;
     kfree(p);
@@ -156,6 +157,7 @@ void sys__exit(int exitcode, bool trap_sig) {
         spinlock_cleanup(&p->p_lock);
         cv_destroy(p->p_cv);
         p->p_addrspace = NULL;
+        p->p_thread = NULL;
         kfree(p->p_name);
         procTable[curproc->p_PID] = NULL;
         kfree(p);

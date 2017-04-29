@@ -69,6 +69,8 @@ bool vm_swapenabled;
 
 struct coremap_entry * coremap;//extern
 struct bitmap * vm_bitmap;
+struct lock * swap_lock;
+struct lock * cm_lock;
 
 /* Initialization function */
 void vm_bootstrap(void);
@@ -93,6 +95,8 @@ void vm_tlbshootdown(const struct tlbshootdown *);
 void cm_init(void);
 
 vaddr_t user_alloc_onepage(void);
+
+void user_free_onepage(vaddr_t addr);
 
 int block_write(void * buffer, off_t offset);
 
