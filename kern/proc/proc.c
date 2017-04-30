@@ -234,10 +234,14 @@ proc_destroy(struct proc *proc)
 	// 	sys_close(fd);
 	// }
 	spinlock_cleanup(&proc->p_lock);
-	// lock_destroy(proc->p_lk);
-	// cv_destroy(proc->p_cv);
+
+	lock_destroy(proc->p_lk);
+	cv_destroy(proc->p_cv);
+	proc->p_thread = NULL;
+	procTable[proc->p_PID] = NULL;
 	kfree(proc->p_name);
 	kfree(proc);
+	proc = NULL;
 }
 
 /*

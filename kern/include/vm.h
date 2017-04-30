@@ -70,7 +70,7 @@ bool vm_swapenabled;
 struct coremap_entry * coremap;//extern
 struct bitmap * vm_bitmap;
 struct lock * swap_lock;
-struct lock * cm_lock;
+extern struct spinlock cm_lock;
 
 /* Initialization function */
 void vm_bootstrap(void);
