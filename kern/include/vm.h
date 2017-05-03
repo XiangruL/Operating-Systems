@@ -59,6 +59,7 @@ struct coremap_entry{
     unsigned cm_len;
     pid_t cm_pid;
     bool cm_isbusy;
+    bool cm_intlb;
     // int cm_fifo;
     //cm_pid
 };

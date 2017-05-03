@@ -25,7 +25,7 @@
 
 static struct vnode * swap_vnode;
 static bool booted = false;
-static struct semaphore * tlb_sem;
+static struct wchan * tlb_wchan;
 
 struct spinlock cm_lock = SPINLOCK_INITIALIZER;
 
@@ -48,7 +48,7 @@ vm_bootstrap(void)
 	}
 	// spinlock_init(&cm_lock);
 	booted = true;
-	tlb_sem = sem_create("tlb_sem", 0);
+	tlb_wchan = wchan_create("tlb_sem");
 	cm_wchan = wchan_create("cm_wchan");
 }
 
@@ -151,10 +151,8 @@ swap_out(enum cm_status_t status, unsigned npages){
 			//2. check its status and block_write(may not need)
 			//2.1 find pid and related ptnode
 			coremap[k].cm_isbusy = true;
-
 			KASSERT(coremap[k].cm_status != Free);
 			pid_t tmp_pid = coremap[k].cm_pid;
-
 			struct pageTableNode * tmp_ptNode = procTable[tmp_pid]->p_addrspace->pageTable;
 			while(tmp_ptNode != NULL){
 				if(tmp_ptNode->pt_pas == k * PAGE_SIZE){
@@ -163,11 +161,56 @@ swap_out(enum cm_status_t status, unsigned npages){
 				tmp_ptNode = tmp_ptNode->next;
 			}
 			KASSERT(tmp_ptNode->pt_pas == k * PAGE_SIZE);
+
+
+			int spl;
+			uint32_t ehi, elo;
+			ehi = tmp_ptNode->pt_vas;
+
+			// tlbshootdown
+			spl = splhigh();
+			elo = k * PAGE_SIZE;
+			int i = tlb_probe(ehi, elo);
+			if(i >= 0){
+				tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
+			}
+			splx(spl);
+
+			// if(coremap[k].cm_intlb){
+			// 	if(curcpu == procTable[tmp_pid]->p_thread->t_cpu){
+			// 		// kprintf("S\n");
+			// 		spl = splhigh();
+			// 		elo = k * PAGE_SIZE;
+			// 		int i = tlb_probe(ehi, elo);
+			// 		if(i >= 0){
+			// 			tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
+			// 		}
+			// 		coremap[k].cm_intlb = false;
+			// 		splx(spl);
+			// 	}else{
+			// 		// kprintf("tlbshootdown\n");
+			// 		struct tlbshootdown * ts = (struct tlbshootdown *)kmalloc(sizeof(struct tlbshootdown));
+			// 		ts->ts_placeholder = k * PAGE_SIZE;
+			// 		ts->ts_cmindex = k;
+			// 		ipi_tlbshootdown(procTable[tmp_pid]->p_thread->t_cpu, (const struct tlbshootdown *)ts);
+			// 		while (coremap[k].cm_intlb) {
+			// 			wchan_sleep(tlb_wchan, &cm_lock);
+			// 		}
+			// 	}
+			// }
+
+
+
 			//2.2 check isDirty and swap_out
 			if(tmp_ptNode->pt_isDirty){
 				unsigned index;
 				if(bitmap_alloc(vm_bitmap, &index)){
-					panic("bitmap_alloc(vm_bitmap, &index)");
+					// panic("bitmap_alloc(vm_bitmap, &index)");
+					if(!cm_lk_hold_before){
+						// wchan_wakeall(cm_wchan, &cm_lock);
+						spinlock_release(&cm_lock);
+					}
+					return 0;
 				}
 				KASSERT(bitmap_isset(vm_bitmap, index) != 0);		//block_write
 				if(block_write((void *)PADDR_TO_KVADDR(k * PAGE_SIZE), index * PAGE_SIZE)){
@@ -194,38 +237,8 @@ swap_out(enum cm_status_t status, unsigned npages){
 			}else{
 				coremap[k].cm_pid = -1;
 			}
-			coremap[k].cm_isbusy = false;
-
-			int spl;
-			uint32_t ehi, elo;
-			ehi = tmp_ptNode->pt_vas;
-
-			//4. tlbshootdown
-			spl = splhigh();
-			elo = k * PAGE_SIZE;
-			int i = tlb_probe(ehi, elo);
-			if(i >= 0){
-				tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
-			}
-			splx(spl);
 
 
-			// if(curcpu == procTable[tmp_pid]->p_thread->t_cpu){
-			// 	// kprintf("S\n");
-			// 	spl = splhigh();
-			// 	elo = k * PAGE_SIZE;
-			// 	int i = tlb_probe(ehi, elo);
-			// 	if(i >= 0){
-			// 		tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
-			// 	}
-			// 	splx(spl);
-			// }else{
-			// 	// kprintf("tlbshootdown\n");
-			// 	struct tlbshootdown * ts = (struct tlbshootdown *)kmalloc(sizeof(struct tlbshootdown));
-			// 	ts->ts_placeholder = k * PAGE_SIZE;
-			// 	ipi_tlbshootdown(procTable[tmp_pid]->p_thread->t_cpu, (const struct tlbshootdown *)ts);
-			// 	P(tlb_sem);
-			// }
 			coremap[k].cm_isbusy = false;
 			wchan_wakeall(cm_wchan, &cm_lock);
 
@@ -273,6 +286,7 @@ alloc_kpages(unsigned npages)
 				coremap[k].cm_isbusy = false;
 				coremap[k].cm_pid = -1;
 				coremap[k].cm_len = 0;
+				coremap[k].cm_intlb = false;
                 if(k == i - npages + 1){
                     coremap[k].cm_len = npages;
                 }
@@ -325,6 +339,7 @@ user_alloc_onepage()
             coremap[i].cm_len = 1;
 			coremap[i].cm_pid = curproc->p_PID;
 			coremap[i].cm_isbusy = false;
+			coremap[i].cm_intlb = false;
 			if(!cm_lk_hold_before){
 				spinlock_release(&cm_lock);
 			}
@@ -374,6 +389,7 @@ free_kpages(vaddr_t addr)
 			coremap[index + i].cm_pid = -1;
 			coremap[index + i].cm_isbusy = false;
 			coremap[index + i].cm_len = 0;
+			coremap[index + i].cm_intlb = false;
         }
     }
 
@@ -409,6 +425,7 @@ user_free_onepage(vaddr_t addr)
 	coremap[index].cm_pid = -1;
 	coremap[index].cm_isbusy = false;
 	coremap[index].cm_len = 0;
+	coremap[index].cm_intlb = false;
 	if(!cm_lk_hold_before){
 		spinlock_release(&cm_lock);
 	}
@@ -449,6 +466,12 @@ vm_tlbshootdown(const struct tlbshootdown *ts)
 
 	int spl;
 	uint32_t ehi, elo;
+	bool cm_lk_hold_before = false;
+	if(!spinlock_do_i_hold(&cm_lock)){
+		spinlock_acquire(&cm_lock);
+	}else{
+		cm_lk_hold_before = true;
+	}
 
 	spl = splhigh();
 	elo = ts->ts_placeholder;
@@ -457,9 +480,12 @@ vm_tlbshootdown(const struct tlbshootdown *ts)
 	if(i >= 0){
 		tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
 	}
-
+	coremap[ts->ts_cmindex].cm_intlb = false;
 	splx(spl);
-	// V(tlb_sem);
+	wchan_wakeall(tlb_wchan, &cm_lock);
+	if(!cm_lk_hold_before){
+		spinlock_release(&cm_lock);
+	}
 }
 
 int
@@ -662,6 +688,8 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		tlb_random(ehi, elo | TLBLO_DIRTY | TLBLO_VALID);
 		splx(spl);
 	}
+
+	coremap[paddr1 / PAGE_SIZE].cm_intlb = true;
 	// spinlock_release
 	// if(!pt_lk_hold_before){
 	// 	spinlock_release(as->as_ptLock);
