@@ -89,44 +89,14 @@ as_destroy(struct addrspace *as)
 	struct pageTableNode * ptTmp = as->pageTable;
 	struct pageTableNode * ptTmp2 = NULL;
 
-	//spinlock_acquire
-	//1. &cm_lock:
-	bool cm_lk_hold_before = false;
-	if(!spinlock_do_i_hold(&cm_lock)){
-		spinlock_acquire(&cm_lock);
-	}else{
-		cm_lk_hold_before = true;
-	}
-	//2. as_ptLock:
-	// bool pt_lk_hold_before = false;
-	// if(!spinlock_do_i_hold(as->as_ptLock)){
-	// 	spinlock_acquire(as->as_ptLock);
-	// }else{
-	// 	pt_lk_hold_before = true;
-	// }
-
 	while(ptTmp != NULL){
 		ptTmp2 = ptTmp;
 		ptTmp = ptTmp->next;
 		if(ptTmp2->pt_inDisk){
-			//swap_lock acquire
-			// spinlock_acquire(swap_lock);
-
 			KASSERT(bitmap_isset(vm_bitmap, ptTmp2->pt_bm_index) != 0);
 			bitmap_unmark(vm_bitmap, ptTmp2->pt_bm_index);
-			//swap_lock release
-			// spinlock_release(swap_lock);
 		}else{
 			user_free_onepage(PADDR_TO_KVADDR(ptTmp2->pt_pas));
-			if(!ptTmp2->pt_isDirty){
-				//swap_lock acquire
-				// spinlock_acquire(swap_lock);
-
-				KASSERT(bitmap_isset(vm_bitmap, ptTmp2->pt_bm_index) != 0);
-				bitmap_unmark(vm_bitmap, ptTmp2->pt_bm_index);
-				//swap_lock release
-				// spinlock_release(swap_lock);
-			}
 		}
 		kfree(ptTmp2);
 	}
@@ -137,13 +107,6 @@ as_destroy(struct addrspace *as)
 		riTmp2 = riTmp;
 		riTmp = riTmp->next;
 		kfree(riTmp2);
-	}
-	// spinlock_release
-	// if(!pt_lk_hold_before){
-	// 	spinlock_release(as->as_ptLock);
-	// }
-	if(!cm_lk_hold_before){
-		spinlock_release(&cm_lock);
 	}
 
 	lock_destroy(as->as_ptLock);
@@ -221,13 +184,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 
 	tmp->next = as->regionInfo;
 	as->regionInfo = tmp;
-	// tmp->next = NULL;
-	// if(as->regionInfo == NULL){
-	// 	as->regionInfo = tmp;
-	// }else{
-	// 	tmp->next = as->regionInfo->next;
-	// 	as->regionInfo->next = tmp;
-	// }
+
 	if(as->heap_vbase < tmp->as_vbase + tmp->as_npages * PAGE_SIZE){
 		as->heap_vbase = tmp->as_vbase + tmp->as_npages * PAGE_SIZE;
 	}
@@ -281,6 +238,33 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 	return 0;
 }
 
+static
+int
+PTNode_Copy(struct pageTableNode * new_ptnode, struct pageTableNode * old_ptnode){
+
+	vaddr_t vaddr_tmp;
+	new_ptnode->pt_vas = old_ptnode->pt_vas;
+	new_ptnode->pt_isDirty = true;
+	new_ptnode->pt_inDisk = false;
+	new_ptnode->pt_bm_index = 0;
+	new_ptnode->next = NULL;
+	vaddr_tmp = user_alloc_onepage();
+	if(vaddr_tmp == 0){
+		return 1;
+	}
+	new_ptnode->pt_pas = vaddr_tmp - MIPS_KSEG0;
+	bzero((void *)PADDR_TO_KVADDR(new_ptnode->pt_pas), 1 * PAGE_SIZE);
+	if(old_ptnode->pt_inDisk){
+		if(block_read((void *)PADDR_TO_KVADDR(new_ptnode->pt_pas), old_ptnode->pt_bm_index * PAGE_SIZE)){
+			panic("block_read error in as_copy\n");
+		}
+	}else{
+		memmove((void *)PADDR_TO_KVADDR(new_ptnode->pt_pas),
+			(const void *)PADDR_TO_KVADDR(old_ptnode->pt_pas),
+			1*PAGE_SIZE);
+	}
+	return 0;
+}
 
 int
 as_copy(struct addrspace *old, struct addrspace **ret)
@@ -295,161 +279,37 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	/*
 	 * Write this.
 	 */
-	vaddr_t vaddr_tmp;
 	newas->heap_vbase = old->heap_vbase;
 	newas->heap_vbound = old->heap_vbound;
 
-
-
-
-	//spinlock_acquire
-	//1. &cm_lock:
-	bool cm_lk_hold_before = false;
-	if(!spinlock_do_i_hold(&cm_lock)){
-		spinlock_acquire(&cm_lock);
-	}else{
-		cm_lk_hold_before = true;
-	}
-	//2. as_ptLock:
-	// bool pt_lk_hold_before = false;
-	// if(!spinlock_do_i_hold(old->as_ptLock)){
-	// 	spinlock_acquire(old->as_ptLock);
-	// }else{
-	// 	pt_lk_hold_before = true;
-	// }
-
-
 	//pageTable
-	newas->pageTable = (struct pageTableNode*)kmalloc(sizeof(struct pageTableNode));
-	if(newas->pageTable == NULL){
-		// spinlock_release
-		// if(!pt_lk_hold_before){
-		// 	spinlock_release(old->as_ptLock);
-		// }
-		if(!cm_lk_hold_before){
-			spinlock_release(&cm_lock);
-		}
-		return ENOMEM;
-	}
-
 	struct pageTableNode *oldPTtmp = old->pageTable;
-	//pageTable Head
-	if(oldPTtmp != NULL){
-		newas->pageTable->pt_vas = oldPTtmp->pt_vas;
-		newas->pageTable->pt_isDirty = true;
-		newas->pageTable->pt_inDisk = false;
-		newas->pageTable->pt_bm_index = 0;
-		newas->pageTable->next = NULL;
-		vaddr_tmp = user_alloc_onepage();//alloc_kpages(1);
-		if(vaddr_tmp == 0){
-			as_destroy(newas);
-			// spinlock_release
-			// if(!pt_lk_hold_before){
-			// 	spinlock_release(old->as_ptLock);
-			// }
-			if(!cm_lk_hold_before){
-				spinlock_release(&cm_lock);
-			}
-			return ENOMEM;
-		}
-		newas->pageTable->pt_pas = vaddr_tmp - MIPS_KSEG0;
-		bzero((void *)PADDR_TO_KVADDR(newas->pageTable->pt_pas), 1 * PAGE_SIZE);
-		if(oldPTtmp->pt_inDisk){
-			// panic("pt_inDisk in as_copy\n");
-			// spinlock_acquire(swap_lock);
-			if(block_read((void *)PADDR_TO_KVADDR(newas->pageTable->pt_pas), oldPTtmp->pt_bm_index * PAGE_SIZE)){
-				kprintf("block_read error in as_copy\n");
-			}
-			// spinlock_release(swap_lock);
-		}else{
-			memmove((void *)PADDR_TO_KVADDR(newas->pageTable->pt_pas),
-				(const void *)PADDR_TO_KVADDR(oldPTtmp->pt_pas),
-				1*PAGE_SIZE);
-		}
-	}
-	//copy pageTable
-	struct pageTableNode *PTtmp = newas->pageTable;
+
+	struct pageTableNode *PTtmp = NULL;
 	struct pageTableNode *PTtmp2;
 	while(oldPTtmp != NULL){
 		//PTtmp2 init
 		PTtmp2 = (struct pageTableNode*)kmalloc(sizeof(struct pageTableNode));
 		if(PTtmp2 == NULL){
 			as_destroy(newas);
-			// spinlock_release
-			// if(!pt_lk_hold_before){
-			// 	spinlock_release(old->as_ptLock);
-			// }
-			if(!cm_lk_hold_before){
-				spinlock_release(&cm_lock);
-			}
 			return ENOMEM;
 		}
-		PTtmp2->pt_vas = oldPTtmp->pt_vas;
-		PTtmp2->pt_isDirty = true;
-		PTtmp2->pt_inDisk = false;
-		PTtmp2->pt_bm_index = 0;
-		PTtmp2->next = NULL;
-		//memory
-		vaddr_tmp = user_alloc_onepage();//alloc_kpages(1);
-		if(vaddr_tmp == 0){
+		if(PTNode_Copy(PTtmp2, oldPTtmp)){
+			kfree(PTtmp2);
 			as_destroy(newas);
-			// spinlock_release
-			// if(!pt_lk_hold_before){
-			// 	spinlock_release(old->as_ptLock);
-			// }
-			if(!cm_lk_hold_before){
-				spinlock_release(&cm_lock);
-			}
 			return ENOMEM;
 		}
-		PTtmp2->pt_pas = vaddr_tmp - MIPS_KSEG0;
-		bzero((void *)PADDR_TO_KVADDR(PTtmp2->pt_pas), 1 * PAGE_SIZE);
-		if(oldPTtmp->pt_inDisk){
-			// panic("pt_inDisk in as_copy\n");
 
-			// spinlock_acquire(swap_lock);
-			if(block_read((void *)PADDR_TO_KVADDR(newas->pageTable->pt_pas), oldPTtmp->pt_bm_index * PAGE_SIZE)){
-				kprintf("block_read error in as_copy\n");
-			}
-			// spinlock_release(swap_lock);
-		}else{
-			memmove((void *)PADDR_TO_KVADDR(PTtmp2->pt_pas),
-				(const void *)PADDR_TO_KVADDR(oldPTtmp->pt_pas),
-				1*PAGE_SIZE);
-		}
-
-		//link
-		PTtmp->next = PTtmp2;
-		PTtmp = PTtmp->next;
+		PTtmp2->next = PTtmp;
+		PTtmp = PTtmp2;
 		oldPTtmp = oldPTtmp->next;
 	}
-
-
-	// spinlock_release
-	// if(!pt_lk_hold_before){
-	// 	spinlock_release(old->as_ptLock);
-	// }
-	if(!cm_lk_hold_before){
-		spinlock_release(&cm_lock);
-	}
-
+	newas->pageTable = PTtmp;
 
 	//regionInfo
-	newas->regionInfo = (struct regionInfoNode*)kmalloc(sizeof(struct regionInfoNode));
-	if(newas->regionInfo == NULL){
-		as_destroy(newas);
-		return ENOMEM;
-	}
 	struct regionInfoNode *oldRItmp = old->regionInfo;
-	//regionInfo Head
-	if(oldRItmp != NULL){
-		newas->regionInfo->as_vbase = oldRItmp->as_vbase;
-		newas->regionInfo->as_npages = oldRItmp->as_npages;
-		newas->regionInfo->as_permission = oldRItmp->as_permission;
-		newas->regionInfo->next = NULL;
-	}
-	//copy regionInfo
-	struct regionInfoNode *RItmp = newas->regionInfo;
+
+	struct regionInfoNode *RItmp = NULL;
 	struct regionInfoNode *RItmp2;
 	while(oldRItmp != NULL){
 		//RItmp2 init
@@ -463,10 +323,11 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		RItmp2->as_permission = oldRItmp->as_permission;
 		RItmp2->next = NULL;
 		//link
-		RItmp->next = RItmp2;
-		RItmp = RItmp->next;
+		RItmp2->next = RItmp;
+		RItmp = RItmp2;
 		oldRItmp = oldRItmp->next;
 	}
+	newas->regionInfo = RItmp;
 
 	*ret = newas;
 	return 0;
