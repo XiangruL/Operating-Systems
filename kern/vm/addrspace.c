@@ -42,6 +42,7 @@
 #include <mips/tlb.h>
 #include <bitmap.h>
 #include <synch.h>
+#include <wchan.h>
 /*
  * Note! If OPT_DUMBVM is set, as is the case until you start the VM
  * assignment, this file is not compiled or linked or in any way
@@ -89,9 +90,19 @@ as_destroy(struct addrspace *as)
 	struct pageTableNode * ptTmp = as->pageTable;
 	struct pageTableNode * ptTmp2 = NULL;
 
+	bool cm_lk_hold_before = false;
+	if(!spinlock_do_i_hold(&cm_lock)){
+		spinlock_acquire(&cm_lock);
+	}else{
+		cm_lk_hold_before = true;
+	}
+
 	while(ptTmp != NULL){
 		ptTmp2 = ptTmp;
 		ptTmp = ptTmp->next;
+
+		wait_page_if_busy(ptTmp2->pt_pas / PAGE_SIZE);
+
 		if(ptTmp2->pt_inDisk){
 			KASSERT(bitmap_isset(vm_bitmap, ptTmp2->pt_bm_index) != 0);
 			bitmap_unmark(vm_bitmap, ptTmp2->pt_bm_index);
@@ -112,6 +123,10 @@ as_destroy(struct addrspace *as)
 	lock_destroy(as->as_ptLock);
 
 	kfree(as);
+
+	if(!cm_lk_hold_before){
+		spinlock_release(&cm_lock);
+	}
 }
 
 void
@@ -242,17 +257,25 @@ static
 int
 PTNode_Copy(struct pageTableNode * new_ptnode, struct pageTableNode * old_ptnode){
 
+
+	wait_page_if_busy(old_ptnode->pt_pas / PAGE_SIZE);
+
 	vaddr_t vaddr_tmp;
 	new_ptnode->pt_vas = old_ptnode->pt_vas;
 	new_ptnode->pt_isDirty = true;
 	new_ptnode->pt_inDisk = false;
 	new_ptnode->pt_bm_index = 0;
 	new_ptnode->next = NULL;
+
 	vaddr_tmp = user_alloc_onepage();
+
 	if(vaddr_tmp == 0){
 		return 1;
 	}
 	new_ptnode->pt_pas = vaddr_tmp - MIPS_KSEG0;
+
+	coremap[new_ptnode->pt_pas / PAGE_SIZE].cm_isbusy = true;
+
 	bzero((void *)PADDR_TO_KVADDR(new_ptnode->pt_pas), 1 * PAGE_SIZE);
 	if(old_ptnode->pt_inDisk){
 		if(block_read((void *)PADDR_TO_KVADDR(new_ptnode->pt_pas), old_ptnode->pt_bm_index * PAGE_SIZE)){
@@ -263,6 +286,9 @@ PTNode_Copy(struct pageTableNode * new_ptnode, struct pageTableNode * old_ptnode
 			(const void *)PADDR_TO_KVADDR(old_ptnode->pt_pas),
 			1*PAGE_SIZE);
 	}
+	coremap[new_ptnode->pt_pas / PAGE_SIZE].cm_isbusy = false;
+	wchan_wakeall(cm_wchan, &cm_lock);
+
 	return 0;
 }
 
@@ -282,6 +308,13 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	newas->heap_vbase = old->heap_vbase;
 	newas->heap_vbound = old->heap_vbound;
 
+	bool cm_lk_hold_before = false;
+	if(!spinlock_do_i_hold(&cm_lock)){
+		spinlock_acquire(&cm_lock);
+	}else{
+		cm_lk_hold_before = true;
+	}
+
 	//pageTable
 	struct pageTableNode *oldPTtmp = old->pageTable;
 
@@ -292,11 +325,17 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		PTtmp2 = (struct pageTableNode*)kmalloc(sizeof(struct pageTableNode));
 		if(PTtmp2 == NULL){
 			as_destroy(newas);
+			if(!cm_lk_hold_before){
+				spinlock_release(&cm_lock);
+			}
 			return ENOMEM;
 		}
 		if(PTNode_Copy(PTtmp2, oldPTtmp)){
 			kfree(PTtmp2);
 			as_destroy(newas);
+			if(!cm_lk_hold_before){
+				spinlock_release(&cm_lock);
+			}
 			return ENOMEM;
 		}
 
@@ -305,6 +344,10 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		oldPTtmp = oldPTtmp->next;
 	}
 	newas->pageTable = PTtmp;
+
+	if(!cm_lk_hold_before){
+		spinlock_release(&cm_lock);
+	}
 
 	//regionInfo
 	struct regionInfoNode *oldRItmp = old->regionInfo;

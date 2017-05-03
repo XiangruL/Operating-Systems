@@ -103,5 +103,5 @@ int block_write(void * buffer, off_t offset);
 
 int block_read(void * buffer, off_t offset);
 
-void wait_page_if_busy(int index);
+void wait_page_if_busy(unsigned index);
 #endif /* _VM_H_ */

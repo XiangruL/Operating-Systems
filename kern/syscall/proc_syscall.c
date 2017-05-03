@@ -188,7 +188,7 @@ sys_execv(const char * program, char ** args){
 
     // allocate memory for args named as copy
 
-    char ** copy = (char **)kmalloc(sizeof(char *) * 4096);
+    char ** copy = (char **)kmalloc(sizeof(char *) * 512);//4096 for exec badcall
     // copy args
     int result = 0;
     // count args num

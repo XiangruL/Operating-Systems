@@ -53,9 +53,9 @@ vm_bootstrap(void)
 }
 
 void
-wait_page_if_busy(int index) {
+wait_page_if_busy(unsigned index) {
 	while(coremap[index].cm_isbusy){
-		// wchan_sleep(cm_wchan, &cm_lock);
+		wchan_sleep(cm_wchan, &cm_lock);
 	}
 }
 
@@ -65,7 +65,7 @@ block_write(void *buffer, off_t offset/*default size: PAGE_SIZE*/){
 	struct uio u;
 
 	uio_kinit(&iov, &u, buffer, PAGE_SIZE, offset, UIO_WRITE);
-	kprintf("Write: %d, kvaddr: %x\n", (int)offset/PAGE_SIZE, (int)buffer);
+	// kprintf("Write: %d, kvaddr: %x\n", (int)offset/PAGE_SIZE, (int)buffer);
 	spinlock_release(&cm_lock);
 	int result = VOP_WRITE(swap_vnode, &u);
 	if(result){
@@ -82,7 +82,7 @@ block_read(void * buffer, off_t offset){
 	struct uio u;
 
 	uio_kinit(&iov, &u, buffer, PAGE_SIZE, offset, UIO_READ);
-	kprintf("Read: %d, kvaddr: %x\n", (int)offset/PAGE_SIZE, (int)buffer);
+	// kprintf("Read: %d, kvaddr: %x\n", (int)offset/PAGE_SIZE, (int)buffer);
 	spinlock_release(&cm_lock);
 	int result = VOP_READ(swap_vnode, &u);
 	if(result){
@@ -114,7 +114,7 @@ swap_out(enum cm_status_t status, unsigned npages){
 		if(status == Fixed){
 			unsigned tmp = 0;
 			for(unsigned i = cm_addr / PAGE_SIZE ; i < cm_num; i++){
-		        if(coremap[i].cm_status != Fixed){
+		        if(coremap[i].cm_status != Fixed && !coremap[i].cm_isbusy){
 		            tmp++;
 		        }else{
 		            tmp = 0;
@@ -131,7 +131,7 @@ swap_out(enum cm_status_t status, unsigned npages){
 		}else{
 			while(1){
 				victim = random() % cm_num;
-				if(coremap[victim].cm_status != Fixed){
+				if(coremap[victim].cm_status != Fixed && !coremap[victim].cm_isbusy){
 					coremap[victim].cm_status = Fixed;
 					break;
 				}
@@ -150,6 +150,8 @@ swap_out(enum cm_status_t status, unsigned npages){
 		for(unsigned k = victim; k < victim + npages ;k++){
 			//2. check its status and block_write(may not need)
 			//2.1 find pid and related ptnode
+			coremap[k].cm_isbusy = true;
+
 			KASSERT(coremap[k].cm_status != Free);
 			pid_t tmp_pid = coremap[k].cm_pid;
 
@@ -224,7 +226,8 @@ swap_out(enum cm_status_t status, unsigned npages){
 			// 	ipi_tlbshootdown(procTable[tmp_pid]->p_thread->t_cpu, (const struct tlbshootdown *)ts);
 			// 	P(tlb_sem);
 			// }
-
+			coremap[k].cm_isbusy = false;
+			wchan_wakeall(cm_wchan, &cm_lock);
 
 		}
 
@@ -401,7 +404,6 @@ user_free_onepage(vaddr_t addr)
 		cm_lk_hold_before = true;
 	}
 
-	// wait_page_if_busy(index);
 
 	coremap[index].cm_status = Free;
 	coremap[index].cm_pid = -1;
@@ -566,7 +568,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	if(found == 1){
 
 		//1. check ptTmp status
-		// wait_page_if_busy((int)ptTmp->pt_pas / PAGE_SIZE);
+		wait_page_if_busy(ptTmp->pt_pas / PAGE_SIZE);
 
 		if(ptTmp->pt_inDisk){
 			//1.1 if in disk, user_alloc_onepage, then swap in
@@ -581,6 +583,9 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 			ptTmp->pt_pas = vaddr_tmp - MIPS_KSEG0;
 			paddr1 = ptTmp->pt_pas;
+
+			coremap[paddr1 / PAGE_SIZE].cm_isbusy = true;
+
 			KASSERT((paddr1 & PAGE_FRAME) == paddr1);
 			bzero((void *)PADDR_TO_KVADDR(paddr1), PAGE_SIZE);
 
@@ -596,6 +601,10 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			ptTmp->pt_isDirty = true;
 			KASSERT(coremap[paddr1 / PAGE_SIZE].cm_pid == curproc->p_PID);
 			KASSERT((paddr1 & PAGE_FRAME) == paddr1);
+
+			coremap[paddr1 / PAGE_SIZE].cm_isbusy = false;
+			wchan_wakeall(cm_wchan, &cm_lock);
+
 
 		}else{
 			//1.2 if in memory
