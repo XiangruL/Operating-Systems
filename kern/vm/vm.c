@@ -20,13 +20,15 @@
 #include <kern/stat.h>
 //lock
 #include <synch.h>
-
+#include <wchan.h>
 
 
 static struct vnode * swap_vnode;
 static bool booted = false;
 static struct semaphore * tlb_sem;
+
 struct spinlock cm_lock = SPINLOCK_INITIALIZER;
+
 void
 vm_bootstrap(void)
 {
@@ -50,6 +52,14 @@ vm_bootstrap(void)
 	// spinlock_init(&cm_lock);
 	booted = true;
 	tlb_sem = sem_create("tlb_sem", 0);
+	cm_wchan = wchan_create("cm_wchan");
+}
+
+void
+wait_page_if_busy(int index) {
+	while(coremap[index].cm_isbusy){
+		wchan_sleep(cm_wchan, &cm_lock);
+	}
 }
 
 int
@@ -78,11 +88,11 @@ block_read(void * buffer, off_t offset){
 	// kprintf("Read: %d, kvaddr: %x\n", (int)offset/PAGE_SIZE, (int)buffer);
 	spinlock_release(&cm_lock);
 	int result = VOP_READ(swap_vnode, &u);
-	spinlock_acquire(&cm_lock);
 	if(result){
 		spinlock_acquire(&cm_lock);
 		return result;
 	}
+	spinlock_acquire(&cm_lock);
 	return 0;
 }
 
@@ -146,6 +156,7 @@ swap_out(enum cm_status_t status, unsigned npages){
 			KASSERT(coremap[k].cm_status != Free);
 			pid_t tmp_pid = coremap[k].cm_pid;
 
+
 			// bool pt_lk_hold_before = false;
 			// if(!spinlock_do_i_hold(procTable[tmp_pid]->p_addrspace->as_ptLock)){
 			// 	spinlock_acquire(procTable[tmp_pid]->p_addrspace->as_ptLock);
@@ -163,32 +174,40 @@ swap_out(enum cm_status_t status, unsigned npages){
 			KASSERT(tmp_ptNode->pt_pas == k * PAGE_SIZE);
 			//2.2 check and modify status
 			if(tmp_ptNode->pt_isDirty){
+
+				//need keep this page from other process's modification
+				wait_page_if_busy(k);
+				coremap[k].cm_isbusy = true;
+
 				unsigned index;
 				// spinlock_acquire(swap_lock);
 				if(bitmap_alloc(vm_bitmap, &index)){
+					panic("bitmap_alloc(vm_bitmap, &index)");
 					// spinlock_release(swap_lock);
 					// if(!pt_lk_hold_before){
 					// 	spinlock_release(procTable[tmp_pid]->p_addrspace->as_ptLock);
 					// }
-					if(!cm_lk_hold_before){
-						spinlock_release(&cm_lock);
-					}
-					return 0;
+					// if(!cm_lk_hold_before){
+					// 	spinlock_release(&cm_lock);
+					// }
+					// return 0;
 				}
 				KASSERT(bitmap_isset(vm_bitmap, index) != 0);		//block_write
 				// kprintf("\nvaddr: %x\n", (int)tmp_ptNode->pt_vas);
 				if(block_write((void *)PADDR_TO_KVADDR(k * PAGE_SIZE), index * PAGE_SIZE)){
+					panic("block_write((void *)PADDR_TO_KVADDR(k * PAGE_SIZE), index * PAGE_SIZE");
 					// spinlock_release(swap_lock);
 					// if(!pt_lk_hold_before){
 					// 	spinlock_release(procTable[tmp_pid]->p_addrspace->as_ptLock);
 					// }
-					if(!cm_lk_hold_before){
-						spinlock_release(&cm_lock);
-					}
-					return 0;
+					// if(!cm_lk_hold_before){
+					// 	spinlock_release(&cm_lock);
+					// }
+					// return 0;
 				}
 				// spinlock_release(swap_lock);
 				tmp_ptNode->pt_bm_index = index;
+				coremap[k].cm_isbusy = false;
 			}
 
 
@@ -247,7 +266,9 @@ swap_out(enum cm_status_t status, unsigned npages){
 
 		}
 
+
 		if(!cm_lk_hold_before){
+			wchan_wakeall(cm_wchan, &cm_lock);
 			spinlock_release(&cm_lock);
 		}
 		//5. return physical addrspace
@@ -414,13 +435,12 @@ user_free_onepage(vaddr_t addr)
 		cm_lk_hold_before = true;
 	}
 
-    if(coremap[index].cm_len >= 1){
-        for(unsigned i = 0; i < coremap[index].cm_len; i++){
-            coremap[index + i].cm_status = Free;
-			coremap[index + i].cm_pid = -1;
-        }
-        coremap[index].cm_len = 0;
-    }
+	wait_page_if_busy(index);
+
+	coremap[index].cm_status = Free;
+	coremap[index].cm_pid = -1;
+	coremap[index].cm_isbusy = false;
+	coremap[index].cm_len = 0;
 	if(!cm_lk_hold_before){
 		spinlock_release(&cm_lock);
 	}
@@ -580,12 +600,19 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	if(found == 1){
 
 		//1. check ptTmp status
+		wait_page_if_busy((int)ptTmp->pt_pas / PAGE_SIZE);
+
 		if(ptTmp->pt_inDisk){
 			//1.1 if in disk, user_alloc_onepage, then swap in
 			vaddr_t vaddr_tmp = user_alloc_onepage();//alloc_kpages(1);
 			if(vaddr_tmp == 0){
+				if(!cm_lk_hold_before){
+					spinlock_release(&cm_lock);
+				}
 				return ENOMEM;
 			}
+
+
 			ptTmp->pt_pas = vaddr_tmp - MIPS_KSEG0;
 			paddr1 = ptTmp->pt_pas;
 			KASSERT((paddr1 & PAGE_FRAME) == paddr1);
@@ -593,6 +620,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 			// kprintf("\nvaddr: %x\n", (int)ptTmp->pt_vas);
 			// spinlock_acquire(swap_lock);
+			coremap[ptTmp->pt_pas / PAGE_SIZE].cm_isbusy = true;
 			if(block_read((void *)PADDR_TO_KVADDR(paddr1), ptTmp->pt_bm_index * PAGE_SIZE)){
 				panic("block_read error in vm_fault\n");
 			}
@@ -601,6 +629,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			KASSERT(bitmap_isset(vm_bitmap, ptTmp->pt_bm_index) != 0);
 			bitmap_unmark(vm_bitmap, ptTmp->pt_bm_index);
 			// spinlock_release(swap_lock);
+			coremap[ptTmp->pt_pas / PAGE_SIZE].cm_isbusy = false;
 
 			ptTmp->pt_inDisk = false;
 			ptTmp->pt_isDirty = true;
@@ -616,6 +645,9 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		struct pageTableNode * newpt;
 		newpt = (struct pageTableNode *)kmalloc(sizeof(struct pageTableNode));
 		if(newpt == NULL){
+			if(!cm_lk_hold_before){
+				spinlock_release(&cm_lock);
+			}
 			return ENOMEM;
 		}
 		newpt->pt_vas = faultaddress;
@@ -626,6 +658,9 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		// kprintf("%x\n", vaddr_tmp);
 		if(vaddr_tmp == 0){
 			kfree(newpt);
+			if(!cm_lk_hold_before){
+				spinlock_release(&cm_lock);
+			}
 			return ENOMEM;
 		}
 		newpt->pt_pas = vaddr_tmp - MIPS_KSEG0;
@@ -638,13 +673,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	}
 
-	// spinlock_release
-	// if(!pt_lk_hold_before){
-	// 	spinlock_release(as->as_ptLock);
-	// }
-	if(!cm_lk_hold_before){
-		spinlock_release(&cm_lock);
-	}
+
 
 	//update TLB
 	/* make sure it's page-aligned */
@@ -659,10 +688,17 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	if(i >= 0){
 		tlb_write(ehi, elo | TLBLO_DIRTY | TLBLO_VALID, i);
 		splx(spl);
-		return 0;
 	}else{
 		tlb_random(ehi, elo | TLBLO_DIRTY | TLBLO_VALID);
 		splx(spl);
-		return 0;
 	}
+	// spinlock_release
+	// if(!pt_lk_hold_before){
+	// 	spinlock_release(as->as_ptLock);
+	// }
+	if(!cm_lk_hold_before){
+		wchan_wakeall(cm_wchan, &cm_lock);
+		spinlock_release(&cm_lock);
+	}
+	return 0;
 }

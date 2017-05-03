@@ -58,6 +58,7 @@ struct coremap_entry{
     // size_t cm_size;
     unsigned cm_len;
     pid_t cm_pid;
+    bool cm_isbusy;
     // int cm_fifo;
     //cm_pid
 };
@@ -70,8 +71,8 @@ bool vm_swapenabled;
 struct coremap_entry * coremap;//extern
 struct bitmap * vm_bitmap;
 struct lock * swap_lock;
+struct wchan * cm_wchan;
 extern struct spinlock cm_lock;
-
 /* Initialization function */
 void vm_bootstrap(void);
 
@@ -102,4 +103,5 @@ int block_write(void * buffer, off_t offset);
 
 int block_read(void * buffer, off_t offset);
 
+void wait_page_if_busy(int index);
 #endif /* _VM_H_ */
