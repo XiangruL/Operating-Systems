@@ -128,7 +128,7 @@ swap_out(enum cm_status_t status, unsigned npages){
 			if(coremap[i].cm_sec == 0){
 				victim = i;
 				break;
-			}else if(coremap[i].cm_sec < tmp_sec){
+			}else if(coremap[i].cm_sec <= tmp_sec){
 				tmp_sec  = coremap[i].cm_sec;
 				victim = i;
 			}
