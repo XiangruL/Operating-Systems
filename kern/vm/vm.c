@@ -103,115 +103,117 @@ swap_out(enum cm_status_t status, unsigned npages){
 	if(npages > 1){
 		panic("npages > 1");
 	}
-	if(vm_swapenabled){
-		paddr_t pa;
+	if(!vm_swapenabled){
+		return 0;
+	}
 
-		bool cm_lk_hold_before = false;
-		if(!spinlock_do_i_hold(&cm_lock)){
-			spinlock_acquire(&cm_lock);
-		}else{
-			cm_lk_hold_before = true;
+	paddr_t pa;
+
+	bool cm_lk_hold_before = false;
+	if(!spinlock_do_i_hold(&cm_lock)){
+		spinlock_acquire(&cm_lock);
+	}else{
+		cm_lk_hold_before = true;
+	}
+	//1. select a coremap index to evict as a victim
+	unsigned victim = 0;
+
+	while(1){
+		victim = random() % cm_num;
+		if(coremap[victim].cm_status != Fixed && !coremap[victim].cm_isbusy){
+			coremap[victim].cm_status = Fixed;
+			break;
 		}
-		//1. select a coremap index to evict as a victim
-		unsigned victim = 0;
+	}
 
-		while(1){
-			victim = random() % cm_num;
-			if(coremap[victim].cm_status != Fixed && !coremap[victim].cm_isbusy){
-				coremap[victim].cm_status = Fixed;
-				break;
-			}
-		}
-
-		if(victim == 0){
-			if(!cm_lk_hold_before){
-				spinlock_release(&cm_lock);
-			}
-			return 0;
-		}
-
-		pa = victim * PAGE_SIZE;
-		unsigned k = victim;
-		//2. check its status and block_write(may not need)
-		//2.1 find pid and related ptnode
-		KASSERT(coremap[k].cm_status != Free);
-		coremap[k].cm_isbusy = true;
-		pid_t tmp_pid = coremap[k].cm_pid;
-		struct pageTableNode * tmp_ptNode = coremap[k].cm_pte;
-		KASSERT(tmp_ptNode != NULL);
-		//tlbshootdown
-		int spl;
-		uint32_t ehi, elo;
-		ehi = tmp_ptNode->pt_vas;
-
-		if(coremap[k].cm_intlb){
-			if(curcpu == procTable[tmp_pid]->p_thread->t_cpu){
-				// kprintf("S\n");
-				spl = splhigh();
-				elo = k * PAGE_SIZE;
-				int i = tlb_probe(ehi, elo);
-				if(i >= 0){
-					tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
-				}
-				coremap[k].cm_intlb = false;
-				splx(spl);
-			}else{
-				// kprintf("tlbshootdown\n");
-				struct tlbshootdown ts; //= (struct tlbshootdown *)kmalloc(sizeof(struct tlbshootdown));
-				ts.ts_placeholder = k * PAGE_SIZE;
-				ts.ts_cmindex = k;
-				ipi_tlbshootdown(procTable[tmp_pid]->p_thread->t_cpu, &ts);
-				while (coremap[k].cm_intlb) {
-					wchan_sleep(tlb_wchan, &cm_lock);
-				}
-			}
-		}
-
-		//2.2 check isDirty and swap_out
-		if(tmp_ptNode->pt_isDirty){
-			unsigned index;
-			if(bitmap_alloc(vm_bitmap, &index)){
-				panic("bitmap_alloc(vm_bitmap, &index)");
-			}
-			//KASSERT(bitmap_isset(vm_bitmap, index) != 0);
-			//block_write
-			if(block_write((void *)PADDR_TO_KVADDR(k * PAGE_SIZE), index * PAGE_SIZE)){
-				panic("block_write((void *)PADDR_TO_KVADDR(k * PAGE_SIZE), index * PAGE_SIZE");
-			}
-			tmp_ptNode->pt_bm_index = index;
-		}
-
-		//3. modify its status
-		tmp_ptNode->pt_inDisk = true;
-		tmp_ptNode->pt_isDirty = true;
-		tmp_ptNode->pt_pas = 0;
-
-
-		if(k == victim){
-			coremap[k].cm_len = npages;
-		}else{
-			coremap[k].cm_len = 0;
-		}
-		coremap[k].cm_status = status;
-		if(status == Dirty){
-			coremap[k].cm_pid = curproc->p_PID;
-		}else{
-			coremap[k].cm_pid = -1;
-		}
-		coremap[k].cm_pte = NULL;
-		coremap[k].cm_isbusy = false;
-		coremap[k].cm_intlb = false;
-
-		wchan_wakeall(cm_wchan, &cm_lock);
-
+	if(victim == 0){
 		if(!cm_lk_hold_before){
-			// wchan_wakeall(cm_wchan, &cm_lock);
 			spinlock_release(&cm_lock);
 		}
-		//5. return physical addrspace
-		return pa;
+		return 0;
 	}
-	return 0;
+
+	pa = victim * PAGE_SIZE;
+	unsigned k = victim;
+	//2. check its status and block_write(may not need)
+	//2.1 find pid and related ptnode
+	KASSERT(coremap[k].cm_status != Free);
+	coremap[k].cm_isbusy = true;
+	pid_t tmp_pid = coremap[k].cm_pid;
+	struct pageTableNode * tmp_ptNode = coremap[k].cm_pte;
+	KASSERT(tmp_ptNode != NULL);
+
+	//2.2 check isDirty and swap_out
+	if(tmp_ptNode->pt_isDirty){
+		unsigned index;
+		if(bitmap_alloc(vm_bitmap, &index)){
+			panic("bitmap_alloc(vm_bitmap, &index)");
+		}
+		//KASSERT(bitmap_isset(vm_bitmap, index) != 0);
+		//block_write
+		if(block_write((void *)PADDR_TO_KVADDR(k * PAGE_SIZE), index * PAGE_SIZE)){
+			panic("block_write((void *)PADDR_TO_KVADDR(k * PAGE_SIZE), index * PAGE_SIZE");
+		}
+		tmp_ptNode->pt_bm_index = index;
+	}
+
+	//3. modify its status
+	tmp_ptNode->pt_inDisk = true;
+	tmp_ptNode->pt_isDirty = true;
+	tmp_ptNode->pt_pas = 0;
+
+
+	if(k == victim){
+		coremap[k].cm_len = npages;
+	}else{
+		coremap[k].cm_len = 0;
+	}
+	coremap[k].cm_status = status;
+	if(status == Dirty){
+		coremap[k].cm_pid = curproc->p_PID;
+	}else{
+		coremap[k].cm_pid = -1;
+	}
+	coremap[k].cm_pte = NULL;
+	coremap[k].cm_isbusy = false;
+	coremap[k].cm_intlb = false;
+
+	wchan_wakeall(cm_wchan, &cm_lock);
+
+	//tlbshootdown
+	int spl;
+	uint32_t ehi, elo;
+	ehi = tmp_ptNode->pt_vas;
+
+	if(coremap[k].cm_intlb){
+		if(curcpu == procTable[tmp_pid]->p_thread->t_cpu){
+			// kprintf("S\n");
+			spl = splhigh();
+			elo = k * PAGE_SIZE;
+			int i = tlb_probe(ehi, elo);
+			if(i >= 0){
+				tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
+			}
+			coremap[k].cm_intlb = false;
+			splx(spl);
+		}else{
+			// kprintf("tlbshootdown\n");
+			struct tlbshootdown ts; //= (struct tlbshootdown *)kmalloc(sizeof(struct tlbshootdown));
+			ts.ts_placeholder = k * PAGE_SIZE;
+			ts.ts_cmindex = k;
+			ipi_tlbshootdown(procTable[tmp_pid]->p_thread->t_cpu, &ts);
+			while (coremap[k].cm_intlb) {
+				wchan_sleep(tlb_wchan, &cm_lock);
+			}
+		}
+	}
+
+	if(!cm_lk_hold_before){
+		spinlock_release(&cm_lock);
+	}
+
+	return pa;
+
 }
 
 
