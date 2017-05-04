@@ -107,6 +107,7 @@ as_destroy(struct addrspace *as)
 			KASSERT(bitmap_isset(vm_bitmap, ptTmp2->pt_bm_index) != 0);
 			bitmap_unmark(vm_bitmap, ptTmp2->pt_bm_index);
 		}else{
+			KASSERT(ptTmp2->pt_bm_index == 0);
 			user_free_onepage(PADDR_TO_KVADDR(ptTmp2->pt_pas));
 		}
 		kfree(ptTmp2);

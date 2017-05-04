@@ -100,6 +100,9 @@ paddr_t
 swap_out(enum cm_status_t status, unsigned npages){
 
 	//try swap out:(check vm_swapenabled at very first)
+	if(npages > 1){
+		panic("npages\n");
+	}
 	if(vm_swapenabled){
 		paddr_t pa;
 
@@ -150,8 +153,8 @@ swap_out(enum cm_status_t status, unsigned npages){
 		for(unsigned k = victim; k < victim + npages ;k++){
 			//2. check its status and block_write(may not need)
 			//2.1 find pid and related ptnode
+			KASSERT(coremap[k].cm_status != Free);
 			coremap[k].cm_isbusy = true;
-			//KASSERT(coremap[k].cm_status != Free);
 			pid_t tmp_pid = coremap[k].cm_pid;
 			struct pageTableNode * tmp_ptNode = coremap[k].cm_pte;
 			//procTable[tmp_pid]->p_addrspace->pageTable;
@@ -163,6 +166,52 @@ swap_out(enum cm_status_t status, unsigned npages){
 			// }
 			KASSERT(tmp_ptNode != NULL);
 
+
+
+
+			//2.2 check isDirty and swap_out
+			if(tmp_ptNode->pt_isDirty){
+				unsigned index;
+				if(bitmap_alloc(vm_bitmap, &index)){
+					kprintf("bitmap_alloc(vm_bitmap, &index)");
+					coremap[k].cm_isbusy = false;
+					coremap[k].cm_status = status;
+					wchan_wakeall(cm_wchan, &cm_lock);
+					if(!cm_lk_hold_before){
+						spinlock_release(&cm_lock);
+					}
+					return 0;
+				}
+				//KASSERT(bitmap_isset(vm_bitmap, index) != 0);		//block_write
+				if(block_write((void *)PADDR_TO_KVADDR(k * PAGE_SIZE), index * PAGE_SIZE)){
+					panic("block_write((void *)PADDR_TO_KVADDR(k * PAGE_SIZE), index * PAGE_SIZE");
+				}
+				tmp_ptNode->pt_bm_index = index;
+			}
+
+
+			//3. modify its status
+			tmp_ptNode->pt_inDisk = true;
+			tmp_ptNode->pt_isDirty = true;
+			tmp_ptNode->pt_pas = 0;
+
+
+			if(k == victim){
+				coremap[k].cm_len = npages;
+			}else{
+				coremap[k].cm_len = 0;
+			}
+			coremap[k].cm_status = status;
+			if(status == Dirty){
+				coremap[k].cm_pid = curproc->p_PID;
+			}else{
+				coremap[k].cm_pid = -1;
+			}
+			coremap[k].cm_pte = NULL;
+			coremap[k].cm_isbusy = false;
+			coremap[k].cm_intlb = false;
+
+			wchan_wakeall(cm_wchan, &cm_lock);
 
 			int spl;
 			uint32_t ehi, elo;
@@ -199,49 +248,6 @@ swap_out(enum cm_status_t status, unsigned npages){
 					}
 				}
 			}
-
-
-
-			//2.2 check isDirty and swap_out
-			if(tmp_ptNode->pt_isDirty){
-				unsigned index;
-				if(bitmap_alloc(vm_bitmap, &index)){
-					// panic("bitmap_alloc(vm_bitmap, &index)");
-					if(!cm_lk_hold_before){
-						// wchan_wakeall(cm_wchan, &cm_lock);
-						spinlock_release(&cm_lock);
-					}
-					return 0;
-				}
-				//KASSERT(bitmap_isset(vm_bitmap, index) != 0);		//block_write
-				if(block_write((void *)PADDR_TO_KVADDR(k * PAGE_SIZE), index * PAGE_SIZE)){
-					panic("block_write((void *)PADDR_TO_KVADDR(k * PAGE_SIZE), index * PAGE_SIZE");
-				}
-				tmp_ptNode->pt_bm_index = index;
-			}
-
-
-			//3. modify its status
-			tmp_ptNode->pt_inDisk = true;
-			tmp_ptNode->pt_isDirty = true;
-			tmp_ptNode->pt_pas = 0;
-
-
-			if(k == victim){
-				coremap[k].cm_len = npages;
-			}else{
-				coremap[k].cm_len = 0;
-			}
-			coremap[k].cm_status = status;
-			if(status == Dirty){
-				coremap[k].cm_pid = curproc->p_PID;
-			}else{
-				coremap[k].cm_pid = -1;
-			}
-			coremap[k].cm_pte = NULL;
-
-			coremap[k].cm_isbusy = false;
-			wchan_wakeall(cm_wchan, &cm_lock);
 
 		}
 
@@ -617,18 +623,20 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			//KASSERT((paddr1 & PAGE_FRAME) == paddr1);
 			bzero((void *)PADDR_TO_KVADDR(paddr1), PAGE_SIZE);
 
+			KASSERT(bitmap_isset(vm_bitmap, ptTmp->pt_bm_index) != 0);
+
 			if(block_read((void *)PADDR_TO_KVADDR(paddr1), ptTmp->pt_bm_index * PAGE_SIZE)){
 				panic("block_read error in vm_fault\n");
 			}
 
 			//2 change status
-			//KASSERT(bitmap_isset(vm_bitmap, ptTmp->pt_bm_index) != 0);
 			bitmap_unmark(vm_bitmap, ptTmp->pt_bm_index);
 
 			ptTmp->pt_inDisk = false;
 			ptTmp->pt_isDirty = true;
-			//KASSERT(coremap[paddr1 / PAGE_SIZE].cm_pid == curproc->p_PID);
-			//KASSERT((paddr1 & PAGE_FRAME) == paddr1);
+			ptTmp->pt_bm_index = 0;
+			KASSERT(coremap[paddr1 / PAGE_SIZE].cm_pid == curproc->p_PID);
+			KASSERT((paddr1 & PAGE_FRAME) == paddr1);
 			coremap[paddr1 / PAGE_SIZE].cm_pte = ptTmp;
 			coremap[paddr1 / PAGE_SIZE].cm_isbusy = false;
 			wchan_wakeall(cm_wchan, &cm_lock);
@@ -664,7 +672,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		newpt->pt_pas = vaddr_tmp - MIPS_KSEG0;
 		paddr1 = newpt->pt_pas;
 		bzero((void *)PADDR_TO_KVADDR(paddr1), PAGE_SIZE);
-		// newpt->pt_pas |= tmp->as_permission;
 		coremap[paddr1 / PAGE_SIZE].cm_pte = newpt;
 		newpt->next = as->pageTable;
 		as->pageTable = newpt;
