@@ -13,7 +13,7 @@
 #include <kern/fcntl.h>
 #include <vfs.h>
 #include <vm.h>
-
+#include <bitmap.h>
 
 int
 sys_getpid(pid_t * retval){
@@ -362,13 +362,26 @@ sys_sbrk(int amount, vaddr_t * retval){
 
 
     if(npages < 0 && as->pageTable != NULL){
+        bool cm_lk_hold_before = false;
+    	if(!spinlock_do_i_hold(&cm_lock)){
+    		spinlock_acquire(&cm_lock);
+    	}else{
+    		cm_lk_hold_before = true;
+    	}
+
         //destroy pte
         struct pageTableNode * pre = as->pageTable;
         struct pageTableNode * cur = pre->next;
         while(cur != NULL){
+            wait_page_if_busy(cur->pt_pas / PAGE_SIZE);
+
             if(cur->pt_vas >= as->heap_vbase + (as->heap_vbound + npages) * PAGE_SIZE && cur->pt_vas < as->heap_vbase + as->heap_vbound * PAGE_SIZE){
                 pre->next = cur->next;
-                free_kpages(PADDR_TO_KVADDR(cur->pt_pas));
+                if(cur->pt_inDisk){
+                    bitmap_unmark(vm_bitmap, cur->pt_bm_index);
+                }else{
+                    user_free_onepage(PADDR_TO_KVADDR(cur->pt_pas));
+                }
         		kfree(cur);
                 cur = pre->next;
                 // as->heap_page_used--;
@@ -381,13 +394,22 @@ sys_sbrk(int amount, vaddr_t * retval){
         // cur = as->pageTable;
         pre = as->pageTable;
         cur = pre->next;
+        wait_page_if_busy(pre->pt_pas / PAGE_SIZE);
         if(pre->pt_vas >= as->heap_vbase + (as->heap_vbound + npages) * PAGE_SIZE && pre->pt_vas < as->heap_vbase + as->heap_vbound * PAGE_SIZE){
-            free_kpages(PADDR_TO_KVADDR(pre->pt_pas));
+            if(pre->pt_inDisk){
+                bitmap_unmark(vm_bitmap, pre->pt_bm_index);
+            }else{
+                user_free_onepage(PADDR_TO_KVADDR(pre->pt_pas));
+            }
             kfree(pre);
             as->pageTable = cur;
             // as->heap_page_used--;
         }
         as_activate();
+
+        if(!cm_lk_hold_before){
+    		spinlock_release(&cm_lock);
+    	}
     }
     *retval = as->heap_vbase + as->heap_vbound * PAGE_SIZE;
     // kprintf("retval: %x", as->heap_vbase);

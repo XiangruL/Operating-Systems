@@ -86,13 +86,20 @@ proc_create(const char *name)
 	/* VFS fields */
 	proc->p_cwd = NULL;
 
-	// //proc->fileTable
-	//
-	// int result = 0;
-	// result = fileTable_init();
-	// if(result){
-	// 	return NULL;
-	// }
+	proc->p_lk = lock_create("proc lock");
+	if(proc->p_lk == NULL){
+		kfree(proc->p_name);
+		kfree(proc);
+		return NULL;
+	}
+	proc->p_cv = cv_create("proc cv");
+	if(proc->p_cv == NULL){
+		kfree(proc->p_name);
+		kfree(proc);
+		lock_destroy(proc->p_lk);
+		return NULL;
+	}
+
 
 	// PID
 	spinlock_acquire(&procTable_lock);
@@ -109,29 +116,6 @@ proc_create(const char *name)
 		spinlock_release(&procTable_lock);
 		return NULL;//ENPROC/EMPROC
 	}
-
-	//semaphore
-	// proc->p_sem = sem_create("proc_sem", 1);
-	proc->p_lk = lock_create("proc lock");
-	if(proc->p_lk == NULL){
-		kfree(proc->p_name);
-		kfree(proc);
-		spinlock_release(&procTable_lock);
-		return NULL;
-	}
-	proc->p_cv = cv_create("proc cv");
-	if(proc->p_cv == NULL){
-		kfree(proc->p_name);
-		kfree(proc);
-		lock_destroy(proc->p_lk);
-		spinlock_release(&procTable_lock);
-		return NULL;
-	}
-	// if(proc->p_sem == NULL){
-	// 	kfree(proc->p_name);
-	// 	kfree(proc);
-	// 	return NULL;
-	// }
 
 	procTable[i] = proc;
 	spinlock_release(&procTable_lock);
