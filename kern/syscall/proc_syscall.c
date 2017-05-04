@@ -363,8 +363,8 @@ sys_sbrk(int amount, vaddr_t * retval){
 
     if(npages < 0 && as->pageTable != NULL){
         bool cm_lk_hold_before = false;
-    	if(!spinlock_do_i_hold(&cm_lock)){
-    		spinlock_acquire(&cm_lock);
+    	if(!lock_do_i_hold(cm_lock)){
+    		lock_acquire(cm_lock);
     	}else{
     		cm_lk_hold_before = true;
     	}
@@ -408,7 +408,7 @@ sys_sbrk(int amount, vaddr_t * retval){
         as_activate();
 
         if(!cm_lk_hold_before){
-    		spinlock_release(&cm_lock);
+    		lock_release(cm_lock);
     	}
     }
     *retval = as->heap_vbase + as->heap_vbound * PAGE_SIZE;

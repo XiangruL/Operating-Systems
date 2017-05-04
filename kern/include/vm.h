@@ -74,7 +74,9 @@ struct coremap_entry * coremap;//extern
 struct bitmap * vm_bitmap;
 struct lock * swap_lock;
 struct wchan * cm_wchan;
-extern struct spinlock cm_lock;
+// extern struct spinlock cm_lock;
+struct lock * cm_lock;
+struct cv * cm_cv;
 /* Initialization function */
 void vm_bootstrap(void);
 
