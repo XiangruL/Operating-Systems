@@ -91,8 +91,8 @@ as_destroy(struct addrspace *as)
 	struct pageTableNode * ptTmp2 = NULL;
 
 	bool cm_lk_hold_before = false;
-	if(!lock_do_i_hold(cm_lock)){
-		lock_acquire(cm_lock);
+	if(!spinlock_do_i_hold(&cm_lock)){
+		spinlock_acquire(&cm_lock);
 	}else{
 		cm_lk_hold_before = true;
 	}
@@ -126,7 +126,7 @@ as_destroy(struct addrspace *as)
 	kfree(as);
 
 	if(!cm_lk_hold_before){
-		lock_release(cm_lock);
+		spinlock_release(&cm_lock);
 	}
 }
 
@@ -289,7 +289,7 @@ PTNode_Copy(struct pageTableNode * new_ptnode, struct pageTableNode * old_ptnode
 
 	coremap[new_ptnode->pt_pas / PAGE_SIZE].cm_pte = new_ptnode;
 	coremap[new_ptnode->pt_pas / PAGE_SIZE].cm_isbusy = false;
-	cv_broadcast(cm_cv, cm_lock);
+	wchan_wakeall(cm_wchan, &cm_lock);
 
 	return 0;
 }
@@ -311,8 +311,8 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	newas->heap_vbound = old->heap_vbound;
 
 	bool cm_lk_hold_before = false;
-	if(!lock_do_i_hold(cm_lock)){
-		lock_acquire(cm_lock);
+	if(!spinlock_do_i_hold(&cm_lock)){
+		spinlock_acquire(&cm_lock);
 	}else{
 		cm_lk_hold_before = true;
 	}
@@ -328,7 +328,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		if(PTtmp2 == NULL){
 			as_destroy(newas);
 			if(!cm_lk_hold_before){
-				lock_release(cm_lock);
+				spinlock_release(&cm_lock);
 			}
 			return ENOMEM;
 		}
@@ -336,7 +336,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 			kfree(PTtmp2);
 			as_destroy(newas);
 			if(!cm_lk_hold_before){
-				lock_release(cm_lock);
+				spinlock_release(&cm_lock);
 			}
 			return ENOMEM;
 		}
@@ -348,7 +348,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	newas->pageTable = PTtmp;
 
 	if(!cm_lk_hold_before){
-		lock_release(cm_lock);
+		spinlock_release(&cm_lock);
 	}
 
 	//regionInfo
