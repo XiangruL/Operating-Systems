@@ -21,7 +21,8 @@
 //lock
 #include <synch.h>
 #include <wchan.h>
-
+//sec
+#include <clock.h>
 
 static struct vnode * swap_vnode;
 static bool booted = false;
@@ -118,13 +119,29 @@ swap_out(enum cm_status_t status, unsigned npages){
 	//1. select a coremap index to evict as a victim
 	unsigned victim = 0;
 
-	while(1){
-		victim = random() % cm_num;
-		if(coremap[victim].cm_status != Fixed && !coremap[victim].cm_isbusy){
-			coremap[victim].cm_status = Fixed;
-			break;
+	struct timespec ts;
+    gettime(&ts);
+	time_t tmp_sec;
+	tmp_sec = ts.tv_sec;
+	for(unsigned i = cm_addr / PAGE_SIZE ; i < cm_num; i++){
+		if(coremap[i].cm_status != Fixed && !coremap[i].cm_isbusy){
+			if(coremap[i].cm_sec == 0){
+				victim = i;
+				break;
+			}else if(coremap[i].cm_sec < tmp_sec){
+				tmp_sec  = coremap[i].cm_sec;
+				victim = i;
+			}
 		}
+
 	}
+	// while(1){
+	// 	victim = random() % cm_num;
+	// 	if(coremap[victim].cm_status != Fixed && !coremap[victim].cm_isbusy){
+	// 		coremap[victim].cm_status = Fixed;
+	// 		break;
+	// 	}
+	// }
 
 	if(victim == 0){
 		if(!cm_lk_hold_before){
@@ -132,12 +149,11 @@ swap_out(enum cm_status_t status, unsigned npages){
 		}
 		return 0;
 	}
-
+	coremap[victim].cm_status = Fixed;
 	pa = victim * PAGE_SIZE;
 	unsigned k = victim;
 	//2. check its status and block_write(may not need)
 	//2.1 find pid and related ptnode
-	KASSERT(coremap[k].cm_status != Free);
 	coremap[k].cm_isbusy = true;
 	pid_t tmp_pid = coremap[k].cm_pid;
 	struct pageTableNode * tmp_ptNode = coremap[k].cm_pte;
@@ -177,6 +193,7 @@ swap_out(enum cm_status_t status, unsigned npages){
 	coremap[k].cm_pte = NULL;
 	coremap[k].cm_isbusy = false;
 	coremap[k].cm_intlb = false;
+	coremap[k].cm_sec = 0;
 
 	wchan_wakeall(cm_wchan, &cm_lock);
 
@@ -248,6 +265,7 @@ alloc_kpages(unsigned npages)
 				coremap[k].cm_pid = -1;
 				coremap[k].cm_len = 0;
 				coremap[k].cm_intlb = false;
+				coremap[i].cm_sec = 0;
                 if(k == i - npages + 1){
                     coremap[k].cm_len = npages;
                 }
@@ -301,6 +319,7 @@ user_alloc_onepage()
 			coremap[i].cm_pid = curproc->p_PID;
 			coremap[i].cm_isbusy = false;
 			coremap[i].cm_intlb = false;
+			coremap[i].cm_sec = 0;
 			bzero((void *)PADDR_TO_KVADDR(pa), 1 * PAGE_SIZE);
 			if(!cm_lk_hold_before){
 				spinlock_release(&cm_lock);
@@ -354,6 +373,7 @@ free_kpages(vaddr_t addr)
 			coremap[index + i].cm_len = 0;
 			coremap[index + i].cm_intlb = false;
 			coremap[index + i].cm_pte = NULL;
+			coremap[index + i].cm_sec = 0;
         }
     }
 
@@ -391,6 +411,7 @@ user_free_onepage(vaddr_t addr)
 	coremap[index].cm_len = 0;
 	coremap[index].cm_intlb = false;
 	coremap[index].cm_pte = NULL;
+	coremap[index].cm_sec = 0;
 	if(!cm_lk_hold_before){
 		spinlock_release(&cm_lock);
 	}
@@ -586,10 +607,11 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 			//2 change status
 			bitmap_unmark(vm_bitmap, ptTmp->pt_bm_index);
-
-			ptTmp->pt_inDisk = false;
 			ptTmp->pt_isDirty = true;
 			ptTmp->pt_bm_index = 0;
+
+			ptTmp->pt_inDisk = false;
+
 			KASSERT(coremap[paddr1 / PAGE_SIZE].cm_pid == curproc->p_PID);
 			KASSERT((paddr1 & PAGE_FRAME) == paddr1);
 			coremap[paddr1 / PAGE_SIZE].cm_pte = ptTmp;
@@ -653,6 +675,9 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	}
 
 	coremap[paddr1 / PAGE_SIZE].cm_intlb = true;
+	struct timespec ts;
+	gettime(&ts);
+	coremap[paddr1 / PAGE_SIZE].cm_sec = ts.tv_sec;
 	// spinlock_release
 	// if(!pt_lk_hold_before){
 	// 	spinlock_release(as->as_ptLock);
