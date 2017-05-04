@@ -60,6 +60,7 @@ struct coremap_entry{
     pid_t cm_pid;
     bool cm_isbusy;
     bool cm_intlb;
+    struct pageTableNode * cm_pte;
     // int cm_fifo;
     //cm_pid
 };

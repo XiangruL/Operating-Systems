@@ -286,6 +286,8 @@ PTNode_Copy(struct pageTableNode * new_ptnode, struct pageTableNode * old_ptnode
 			(const void *)PADDR_TO_KVADDR(old_ptnode->pt_pas),
 			1*PAGE_SIZE);
 	}
+
+	coremap[new_ptnode->pt_pas / PAGE_SIZE].cm_pte = new_ptnode;
 	coremap[new_ptnode->pt_pas / PAGE_SIZE].cm_isbusy = false;
 	wchan_wakeall(cm_wchan, &cm_lock);
 

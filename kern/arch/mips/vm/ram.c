@@ -167,6 +167,7 @@ void cm_init(void) {
 		coremap[i].cm_pid = -1;
 		coremap[i].cm_isbusy = false;
 		coremap[i].cm_intlb = false;
+		coremap[i].cm_pte = NULL;
 	}
 	for(unsigned i = fixedPage; i < cm_num; i++){
 		coremap[i].cm_status = Free;
@@ -174,6 +175,7 @@ void cm_init(void) {
 		coremap[i].cm_pid = -1;
 		coremap[i].cm_isbusy = false;
 		coremap[i].cm_intlb = false;
+		coremap[i].cm_pte = NULL;
 	}
 
 }

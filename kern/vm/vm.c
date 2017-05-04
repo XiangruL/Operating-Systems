@@ -42,9 +42,9 @@ vm_bootstrap(void)
 		struct stat st;
 		VOP_STAT(swap_vnode, &st);
 		vm_bitmap = bitmap_create(st.st_size / PAGE_SIZE);
-		KASSERT(vm_bitmap != NULL);
+		//KASSERT(vm_bitmap != NULL);
 		swap_lock = lock_create("swap_lock");
-		KASSERT(swap_lock != NULL);
+		//KASSERT(swap_lock != NULL);
 	}
 	// spinlock_init(&cm_lock);
 	booted = true;
@@ -151,16 +151,17 @@ swap_out(enum cm_status_t status, unsigned npages){
 			//2. check its status and block_write(may not need)
 			//2.1 find pid and related ptnode
 			coremap[k].cm_isbusy = true;
-			KASSERT(coremap[k].cm_status != Free);
+			//KASSERT(coremap[k].cm_status != Free);
 			pid_t tmp_pid = coremap[k].cm_pid;
-			struct pageTableNode * tmp_ptNode = procTable[tmp_pid]->p_addrspace->pageTable;
-			while(tmp_ptNode != NULL){
-				if(tmp_ptNode->pt_pas == k * PAGE_SIZE){
-					break;
-				}
-				tmp_ptNode = tmp_ptNode->next;
-			}
-			KASSERT(tmp_ptNode->pt_pas == k * PAGE_SIZE);
+			struct pageTableNode * tmp_ptNode = coremap[k].cm_pte;
+			//procTable[tmp_pid]->p_addrspace->pageTable;
+			// while(tmp_ptNode != NULL){
+			// 	if(tmp_ptNode->pt_pas == k * PAGE_SIZE){
+			// 		break;
+			// 	}
+			// 	tmp_ptNode = tmp_ptNode->next;
+			// }
+			KASSERT(tmp_ptNode != NULL);
 
 
 			int spl;
@@ -168,36 +169,36 @@ swap_out(enum cm_status_t status, unsigned npages){
 			ehi = tmp_ptNode->pt_vas;
 
 			// tlbshootdown
-			spl = splhigh();
-			elo = k * PAGE_SIZE;
-			int i = tlb_probe(ehi, elo);
-			if(i >= 0){
-				tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
-			}
-			splx(spl);
-
-			// if(coremap[k].cm_intlb){
-			// 	if(curcpu == procTable[tmp_pid]->p_thread->t_cpu){
-			// 		// kprintf("S\n");
-			// 		spl = splhigh();
-			// 		elo = k * PAGE_SIZE;
-			// 		int i = tlb_probe(ehi, elo);
-			// 		if(i >= 0){
-			// 			tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
-			// 		}
-			// 		coremap[k].cm_intlb = false;
-			// 		splx(spl);
-			// 	}else{
-			// 		// kprintf("tlbshootdown\n");
-			// 		struct tlbshootdown * ts = (struct tlbshootdown *)kmalloc(sizeof(struct tlbshootdown));
-			// 		ts->ts_placeholder = k * PAGE_SIZE;
-			// 		ts->ts_cmindex = k;
-			// 		ipi_tlbshootdown(procTable[tmp_pid]->p_thread->t_cpu, (const struct tlbshootdown *)ts);
-			// 		while (coremap[k].cm_intlb) {
-			// 			wchan_sleep(tlb_wchan, &cm_lock);
-			// 		}
-			// 	}
+			// spl = splhigh();
+			// elo = k * PAGE_SIZE;
+			// int i = tlb_probe(ehi, elo);
+			// if(i >= 0){
+			// 	tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
 			// }
+			// splx(spl);
+
+			if(coremap[k].cm_intlb){
+				if(curcpu == procTable[tmp_pid]->p_thread->t_cpu){
+					// kprintf("S\n");
+					spl = splhigh();
+					elo = k * PAGE_SIZE;
+					int i = tlb_probe(ehi, elo);
+					if(i >= 0){
+						tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
+					}
+					coremap[k].cm_intlb = false;
+					splx(spl);
+				}else{
+					// kprintf("tlbshootdown\n");
+					struct tlbshootdown ts; //= (struct tlbshootdown *)kmalloc(sizeof(struct tlbshootdown));
+					ts.ts_placeholder = k * PAGE_SIZE;
+					ts.ts_cmindex = k;
+					ipi_tlbshootdown(procTable[tmp_pid]->p_thread->t_cpu, &ts);
+					while (coremap[k].cm_intlb) {
+						wchan_sleep(tlb_wchan, &cm_lock);
+					}
+				}
+			}
 
 
 
@@ -212,7 +213,7 @@ swap_out(enum cm_status_t status, unsigned npages){
 					}
 					return 0;
 				}
-				KASSERT(bitmap_isset(vm_bitmap, index) != 0);		//block_write
+				//KASSERT(bitmap_isset(vm_bitmap, index) != 0);		//block_write
 				if(block_write((void *)PADDR_TO_KVADDR(k * PAGE_SIZE), index * PAGE_SIZE)){
 					panic("block_write((void *)PADDR_TO_KVADDR(k * PAGE_SIZE), index * PAGE_SIZE");
 				}
@@ -237,7 +238,7 @@ swap_out(enum cm_status_t status, unsigned npages){
 			}else{
 				coremap[k].cm_pid = -1;
 			}
-
+			coremap[k].cm_pte = NULL;
 
 			coremap[k].cm_isbusy = false;
 			wchan_wakeall(cm_wchan, &cm_lock);
@@ -390,6 +391,7 @@ free_kpages(vaddr_t addr)
 			coremap[index + i].cm_isbusy = false;
 			coremap[index + i].cm_len = 0;
 			coremap[index + i].cm_intlb = false;
+			coremap[index + i].cm_pte = NULL;
         }
     }
 
@@ -426,6 +428,7 @@ user_free_onepage(vaddr_t addr)
 	coremap[index].cm_isbusy = false;
 	coremap[index].cm_len = 0;
 	coremap[index].cm_intlb = false;
+	coremap[index].cm_pte = NULL;
 	if(!cm_lk_hold_before){
 		spinlock_release(&cm_lock);
 	}
@@ -462,7 +465,6 @@ coremap_used_bytes() {
 void
 vm_tlbshootdown(const struct tlbshootdown *ts)
 {
-	// kprintf("vm tried to do tlb shootdown?!\n");
 
 	int spl;
 	uint32_t ehi, elo;
@@ -547,9 +549,9 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	//faultaddress should be only in non-stack non-heap regions.
 	if(faultaddress < as->heap_vbase){
 		while(tmp != NULL){
-			//KASSERT
-			KASSERT(tmp->as_vbase != 0);
-			KASSERT((tmp->as_vbase & PAGE_FRAME) == tmp->as_vbase);
+			////KASSERT
+			//KASSERT(tmp->as_vbase != 0);
+			//KASSERT((tmp->as_vbase & PAGE_FRAME) == tmp->as_vbase);
 			//base & bounds
 			vbase = tmp->as_vbase;
 			vtop = vbase + tmp->as_npages * PAGE_SIZE;
@@ -612,7 +614,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 			coremap[paddr1 / PAGE_SIZE].cm_isbusy = true;
 
-			KASSERT((paddr1 & PAGE_FRAME) == paddr1);
+			//KASSERT((paddr1 & PAGE_FRAME) == paddr1);
 			bzero((void *)PADDR_TO_KVADDR(paddr1), PAGE_SIZE);
 
 			if(block_read((void *)PADDR_TO_KVADDR(paddr1), ptTmp->pt_bm_index * PAGE_SIZE)){
@@ -620,14 +622,14 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			}
 
 			//2 change status
-			KASSERT(bitmap_isset(vm_bitmap, ptTmp->pt_bm_index) != 0);
+			//KASSERT(bitmap_isset(vm_bitmap, ptTmp->pt_bm_index) != 0);
 			bitmap_unmark(vm_bitmap, ptTmp->pt_bm_index);
 
 			ptTmp->pt_inDisk = false;
 			ptTmp->pt_isDirty = true;
-			KASSERT(coremap[paddr1 / PAGE_SIZE].cm_pid == curproc->p_PID);
-			KASSERT((paddr1 & PAGE_FRAME) == paddr1);
-
+			//KASSERT(coremap[paddr1 / PAGE_SIZE].cm_pid == curproc->p_PID);
+			//KASSERT((paddr1 & PAGE_FRAME) == paddr1);
+			coremap[paddr1 / PAGE_SIZE].cm_pte = ptTmp;
 			coremap[paddr1 / PAGE_SIZE].cm_isbusy = false;
 			wchan_wakeall(cm_wchan, &cm_lock);
 
@@ -663,7 +665,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		paddr1 = newpt->pt_pas;
 		bzero((void *)PADDR_TO_KVADDR(paddr1), PAGE_SIZE);
 		// newpt->pt_pas |= tmp->as_permission;
-
+		coremap[paddr1 / PAGE_SIZE].cm_pte = newpt;
 		newpt->next = as->pageTable;
 		as->pageTable = newpt;
 
@@ -673,7 +675,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	//update TLB
 	/* make sure it's page-aligned */
-	KASSERT((paddr1 & PAGE_FRAME) == paddr1);
+	//KASSERT((paddr1 & PAGE_FRAME) == paddr1);
 	int spl;
 	uint32_t ehi, elo;
 	/* Disable interrupts on this CPU while frobbing the TLB. */
