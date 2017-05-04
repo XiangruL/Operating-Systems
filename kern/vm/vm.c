@@ -100,9 +100,7 @@ paddr_t
 swap_out(enum cm_status_t status, unsigned npages){
 
 	//try swap out:(check vm_swapenabled at very first)
-	if(npages > 1){
-		panic("npages\n");
-	}
+
 	if(vm_swapenabled){
 		paddr_t pa;
 
@@ -173,14 +171,14 @@ swap_out(enum cm_status_t status, unsigned npages){
 			if(tmp_ptNode->pt_isDirty){
 				unsigned index;
 				if(bitmap_alloc(vm_bitmap, &index)){
-					kprintf("bitmap_alloc(vm_bitmap, &index)");
-					coremap[k].cm_isbusy = false;
-					coremap[k].cm_status = status;
-					wchan_wakeall(cm_wchan, &cm_lock);
-					if(!cm_lk_hold_before){
-						spinlock_release(&cm_lock);
-					}
-					return 0;
+					panic("bitmap_alloc(vm_bitmap, &index)");
+					// coremap[k].cm_isbusy = false;
+					// coremap[k].cm_status = status;
+					// wchan_wakeall(cm_wchan, &cm_lock);
+					// if(!cm_lk_hold_before){
+					// 	spinlock_release(&cm_lock);
+					// }
+					// return 0;
 				}
 				//KASSERT(bitmap_isset(vm_bitmap, index) != 0);		//block_write
 				if(block_write((void *)PADDR_TO_KVADDR(k * PAGE_SIZE), index * PAGE_SIZE)){
@@ -347,6 +345,7 @@ user_alloc_onepage()
 			coremap[i].cm_pid = curproc->p_PID;
 			coremap[i].cm_isbusy = false;
 			coremap[i].cm_intlb = false;
+			bzero((void *)PADDR_TO_KVADDR(pa), 1 * PAGE_SIZE);
 			if(!cm_lk_hold_before){
 				spinlock_release(&cm_lock);
 			}
@@ -361,6 +360,7 @@ user_alloc_onepage()
 		}
 		return 0;
 	}
+	bzero((void *)PADDR_TO_KVADDR(pa), 1 * PAGE_SIZE);
 	if(!cm_lk_hold_before){
 		spinlock_release(&cm_lock);
 	}
@@ -621,7 +621,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			coremap[paddr1 / PAGE_SIZE].cm_isbusy = true;
 
 			//KASSERT((paddr1 & PAGE_FRAME) == paddr1);
-			bzero((void *)PADDR_TO_KVADDR(paddr1), PAGE_SIZE);
 
 			KASSERT(bitmap_isset(vm_bitmap, ptTmp->pt_bm_index) != 0);
 
@@ -671,7 +670,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		}
 		newpt->pt_pas = vaddr_tmp - MIPS_KSEG0;
 		paddr1 = newpt->pt_pas;
-		bzero((void *)PADDR_TO_KVADDR(paddr1), PAGE_SIZE);
 		coremap[paddr1 / PAGE_SIZE].cm_pte = newpt;
 		newpt->next = as->pageTable;
 		as->pageTable = newpt;

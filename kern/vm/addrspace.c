@@ -104,10 +104,10 @@ as_destroy(struct addrspace *as)
 		wait_page_if_busy(ptTmp2->pt_pas / PAGE_SIZE);
 
 		if(ptTmp2->pt_inDisk){
-			KASSERT(bitmap_isset(vm_bitmap, ptTmp2->pt_bm_index) != 0);
+			// KASSERT(bitmap_isset(vm_bitmap, ptTmp2->pt_bm_index) != 0);
 			bitmap_unmark(vm_bitmap, ptTmp2->pt_bm_index);
 		}else{
-			KASSERT(ptTmp2->pt_bm_index == 0);
+			// KASSERT(ptTmp2->pt_bm_index == 0);
 			user_free_onepage(PADDR_TO_KVADDR(ptTmp2->pt_pas));
 		}
 		kfree(ptTmp2);
@@ -277,7 +277,6 @@ PTNode_Copy(struct pageTableNode * new_ptnode, struct pageTableNode * old_ptnode
 
 	coremap[new_ptnode->pt_pas / PAGE_SIZE].cm_isbusy = true;
 
-	bzero((void *)PADDR_TO_KVADDR(new_ptnode->pt_pas), 1 * PAGE_SIZE);
 	if(old_ptnode->pt_inDisk){
 		if(block_read((void *)PADDR_TO_KVADDR(new_ptnode->pt_pas), old_ptnode->pt_bm_index * PAGE_SIZE)){
 			panic("block_read error in as_copy\n");
