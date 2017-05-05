@@ -79,8 +79,6 @@ struct lock {
 		volatile struct thread *lk_thread;
 		volatile bool lk_hold;
         HANGMAN_LOCKABLE(lk_hangman);   /* Deadlock detector hook. */
-        // add what you need here
-        // (don't forget to mark things volatile as needed)
 };
 
 struct lock *lock_create(const char *name);
@@ -120,9 +118,6 @@ struct cv {
         char *cv_name;
 		struct wchan *cv_wchan;
 		struct spinlock cv_slk;
-
-		// add what you need here
-        // (don't forget to mark things volatile as needed)
 };
 
 struct cv *cv_create(const char *name);
@@ -147,12 +142,6 @@ void cv_broadcast(struct cv *cv, struct lock *lock);
 
 
 
-
-/*
-* Thread List Struct
-*/
-
-
 /*
  * Reader-writer locks.
  *
@@ -168,16 +157,9 @@ struct rwlock {
         volatile unsigned rwlock_read_count;
 		volatile unsigned rwlock_writewaiting_count;
 		volatile bool rwlock_read_hold;
-		volatile bool rwlock_write_wait;
-		// volatile unsigned rwlock_write_preenter_count;
 		volatile bool rwlock_write_hold;
-		// struct cv *rwlock_cv;
 		struct lock *rwlock_lk;
-		struct spinlock rwlock_slk;
-		struct wchan *rwlock_wchan;
-
-		// add what you need here
-        // (don't forget to mark things volatile as needed)
+		struct cv * rwlock_cv;
 };
 
 struct rwlock * rwlock_create(const char *);
