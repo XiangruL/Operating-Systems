@@ -263,7 +263,7 @@ PTNode_Copy(struct pageTableNode * new_ptnode, struct pageTableNode * old_ptnode
 
 	vaddr_t vaddr_tmp;
 	new_ptnode->pt_vas = old_ptnode->pt_vas;
-	new_ptnode->pt_isDirty = true;
+	// new_ptnode->pt_isDirty = true;
 	new_ptnode->pt_inDisk = false;
 	new_ptnode->pt_bm_index = 0;
 	new_ptnode->next = NULL;

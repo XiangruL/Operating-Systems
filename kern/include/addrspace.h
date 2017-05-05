@@ -51,7 +51,7 @@ struct lock;
 struct pageTableNode{
     vaddr_t pt_vas;
     paddr_t pt_pas;
-    bool pt_isDirty;
+    // bool pt_isDirty;
     bool pt_inDisk;
     unsigned pt_bm_index;
     // int pt_permission;

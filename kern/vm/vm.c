@@ -160,22 +160,22 @@ swap_out(enum cm_status_t status, unsigned npages){
 	KASSERT(tmp_ptNode != NULL);
 
 	//2.2 check isDirty and swap_out
-	if(tmp_ptNode->pt_isDirty){
-		unsigned index;
-		if(bitmap_alloc(vm_bitmap, &index)){
-			panic("bitmap_alloc(vm_bitmap, &index)");
-		}
-		//KASSERT(bitmap_isset(vm_bitmap, index) != 0);
-		//block_write
-		if(block_write((void *)PADDR_TO_KVADDR(k * PAGE_SIZE), index * PAGE_SIZE)){
-			panic("block_write((void *)PADDR_TO_KVADDR(k * PAGE_SIZE), index * PAGE_SIZE");
-		}
-		tmp_ptNode->pt_bm_index = index;
+
+	unsigned index;
+	if(bitmap_alloc(vm_bitmap, &index)){
+		panic("bitmap_alloc(vm_bitmap, &index)");
 	}
+	//KASSERT(bitmap_isset(vm_bitmap, index) != 0);
+	//block_write
+	if(block_write((void *)PADDR_TO_KVADDR(k * PAGE_SIZE), index * PAGE_SIZE)){
+		panic("block_write((void *)PADDR_TO_KVADDR(k * PAGE_SIZE), index * PAGE_SIZE");
+	}
+	tmp_ptNode->pt_bm_index = index;
+
 
 	//3. modify its status
 	tmp_ptNode->pt_inDisk = true;
-	tmp_ptNode->pt_isDirty = true;
+	// tmp_ptNode->pt_isDirty = true;
 	tmp_ptNode->pt_pas = 0;
 
 
@@ -607,7 +607,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 			//2 change status
 			bitmap_unmark(vm_bitmap, ptTmp->pt_bm_index);
-			ptTmp->pt_isDirty = true;
+			// ptTmp->pt_isDirty = true;
 			ptTmp->pt_bm_index = 0;
 
 			ptTmp->pt_inDisk = false;
@@ -634,7 +634,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			return ENOMEM;
 		}
 		newpt->pt_vas = faultaddress;
-		newpt->pt_isDirty = true;
+		// newpt->pt_isDirty = true;
 		newpt->pt_inDisk = false;
 		newpt->pt_bm_index = 0;
 		vaddr_t vaddr_tmp = user_alloc_onepage();//alloc_kpages(1);
