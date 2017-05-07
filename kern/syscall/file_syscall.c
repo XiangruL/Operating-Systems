@@ -45,7 +45,6 @@ fileTable_init(void)
 	console = kstrdup("con:");
 	console1 = kstrdup("con:");
 	console2 = kstrdup("con:");
-	// int err = 0;
 
 	if(vfs_open(console, O_RDONLY, 0, &v0)) {
 		kfree(console);
@@ -63,9 +62,6 @@ fileTable_init(void)
 	}
 
 	if(vfs_open(console1, O_WRONLY, 0, &v1)) {
-		// kfree(v0);
-		// kfree(v1);
-		// kfree(v2);
 		kfree(console);
 		kfree(console1);
 		kfree(console2);
@@ -90,9 +86,6 @@ fileTable_init(void)
 	}
 
 	if(vfs_open(console2, O_WRONLY, 0, &v2)) {
-		// kfree(v0);
-		// kfree(v1);
-		// kfree(v2);
 		kfree(console);
 		kfree(console1);
 		kfree(console2);
@@ -107,9 +100,6 @@ fileTable_init(void)
 	}
 
 	if(fileHandle_init(console2, v2, &curproc->fileTable[2], 0, O_WRONLY, 1)){
-		// kfree(v0);
-		// kfree(v1);
-		// kfree(v2);
 		kfree(console);
 		kfree(console1);
 		kfree(console2);
@@ -132,7 +122,6 @@ sys_open(const char * filename, int flags, int * retval)
 {
 	int index = 3, err = 0;
 	size_t len;
-	// off_t off = 0;
 	struct vnode * v;
 	char * name = (char *)kmalloc(sizeof(char) * PATH_MAX);
 	err = copyinstr((const_userptr_t)filename, name, PATH_MAX, &len);
@@ -169,7 +158,6 @@ sys_open(const char * filename, int flags, int * retval)
 int
 sys_write(int fd, const void *buffer, size_t len, int * retval)
 {
-	//EBADF
 	if(fd < 0 || fd >= OPEN_MAX){
 		return EBADF;
 	}
@@ -193,10 +181,9 @@ sys_write(int fd, const void *buffer, size_t len, int * retval)
 	struct iovec iov;
 	struct uio u;
 	lock_acquire(curproc->fileTable[fd]->lk);
-	// struct iovec *iov, struct uio *u,
-	// 	  void *kbuf, size_t len, off_t pos, enum uio_rw rw
+
 	uio_kinit(&iov, &u, buf, len, curproc->fileTable[fd]->offset, UIO_WRITE);
-	// u.uio_space = curproc->p_addrspace;
+
 	result = VOP_WRITE(curproc->fileTable[fd]->vn, &u);
 	if(result){
 		kfree(buf);
@@ -228,18 +215,13 @@ sys_read(int fd, void * buffer, size_t len, int * retval){
 	if(buf == NULL) {
 		return EFAULT;
 	}
-	// result = copyin((const_userptr_t)buffer,buf,len);
-	// if(result){
-	// 	kfree(buf);
-	// 	return EINVAL;
-	// }
+
 	struct iovec iov;
 	struct uio u;
 	// struct iovec *iov, struct uio *u,
 	// 	  void *kbuf, size_t len, off_t pos, enum uio_rw rw
 	lock_acquire(curproc->fileTable[fd]->lk);
 	uio_kinit(&iov, &u, buf, len, curproc->fileTable[fd]->offset, UIO_READ);
-	// u.uio_space = curproc->p_addrspace;
 	result = VOP_READ(curproc->fileTable[fd]->vn, &u);
 	if(result){
 		kfree(buf);
@@ -300,8 +282,6 @@ sys___getcwd(char * buffer, size_t len, int * retval){
 	}
 	struct iovec iov;
 	struct uio u;
-	// struct iovec *iov, struct uio *u,
-	// 	  void *kbuf, size_t len, off_t pos, enum uio_rw rw
 	uio_kinit(&iov, &u, (userptr_t)buffer, len-1, 0, UIO_READ);
 	u.uio_segflg = UIO_USERSPACE;
 	u.uio_space = curproc->p_addrspace;
@@ -311,11 +291,7 @@ sys___getcwd(char * buffer, size_t len, int * retval){
 		return result;
 	};
 	buffer[len-1 - u.uio_resid] = '\0';
-	// result = copyoutstr((const char *)buf, (userptr_t)buffer, len-u.uio_resid, &len);
-	// if(result){
-	// 	kfree(buf);
-	// 	return EINVAL;
-	// }
+
 	*retval = strlen(buf);
 	kfree(buf);
 	return 0;
@@ -327,9 +303,7 @@ sys_lseek(int fd, off_t pos, int whence, int64_t * retval){
 	if(fd < 0 || fd >= OPEN_MAX || curproc->fileTable[fd] == NULL){
 		return EBADF;
 	}
-	// if(fd >=0 || fd <=2){
-	// 	return ESPIPE;
-	// }
+
 	int err;
 	struct stat * statbuf;
 	statbuf = (struct stat *)kmalloc(sizeof(struct stat));
@@ -360,10 +334,7 @@ sys_lseek(int fd, off_t pos, int whence, int64_t * retval){
 		lock_release(curproc->fileTable[fd]->lk);
 		return EINVAL;
 	}
-	// if(whence != SEEK_SET || whence != SEEK_CUR || whence != SEEK_END){
-	// 	lock
-	// 	return EINVAL;
-	// }
+
 	*retval = (int64_t)tmppos;
 	curproc->fileTable[fd]->offset = tmppos;
 	lock_release(curproc->fileTable[fd]->lk);
@@ -394,7 +365,6 @@ sys_dup2(int oldfd, int newfd, int * retval){
 		sys_close(newfd);
 		if(curproc->fileTable[newfd] == NULL){
 			curproc->fileTable[newfd] = (struct fileHandle *)kmalloc(sizeof(struct fileHandle));
-			// KASSERT(fh != NULL);
 			if(curproc->fileTable[newfd] == NULL){
 				return ENFILE;
 			}

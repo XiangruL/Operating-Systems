@@ -48,7 +48,6 @@ int sys_fork(struct trapframe * tf, int * retval){
         return ENOMEM;
     }
 
-    // newproc->p_addrspace = newas;
     newproc->p_PPID = curproc->p_PID;
 
     /* MOVE into thread_fork: Copy filetable from proc to newproc
@@ -61,16 +60,15 @@ int sys_fork(struct trapframe * tf, int * retval){
 		}
 	}
     // thread_fork do the remaining work
-    result = thread_fork("test_thread_fork", newproc, enter_forked_process, newtf, (unsigned long) newas);//data1, data2
+    result = thread_fork("test_thread_fork", newproc, enter_forked_process, newtf, (unsigned long) newas);
     if(result) {
         return result;
     }
 
 
     *retval = newproc->p_PID;
-    // newproc->p_cwd = curproc->p_cwd;
-    // VOP_INCREF(curproc->p_cwd);
-    curproc->p_numthreads++;//useless?
+
+    curproc->p_numthreads++;
     return 0;
 }
 
@@ -108,12 +106,8 @@ int sys_waitpid(pid_t pid, int * status, int options, pid_t *retval) {
 		cv_wait(p->p_cv, p->p_lk);
 	}
 	lock_release(p->p_lk);
-    // exitstatus = p->p_exitcode;
     if(status != NULL){
-        // result = copyout((const void *)&exitstatus, (userptr_t)status, sizeof(int));
-    	// if (result) {
-    	// 	return result;
-    	// }
+
         *status = p->p_exitcode;
     }
     as_destroy(p->p_addrspace);
@@ -132,13 +126,10 @@ int sys_waitpid(pid_t pid, int * status, int options, pid_t *retval) {
 
 void sys__exit(int exitcode, bool trap_sig) {
     struct proc * p = curproc;
-    // as_deactivate();
-    // as_destroy(proc_getas());
     KASSERT(procTable[p->p_PID] != NULL);
-    // proc_remthread(curthread);
+
     lock_acquire(p->p_lk);
     p->p_exit = true;
-    // p->p_exitcode = _MKWAIT_EXIT(exitcode);
     if(trap_sig){
         p->p_exitcode = _MKWAIT_SIG(exitcode);
     }else{
@@ -163,7 +154,6 @@ void sys__exit(int exitcode, bool trap_sig) {
         kfree(p);
         p = NULL;
     }
-    // proc_destroy(p);
     thread_exit();
     panic("sys__exit failed in proc_syscall");
 }
@@ -218,8 +208,6 @@ sys_execv(const char * program, char ** args){
         }
     	r_size = strlen(copy[i]) + 1;
     	kargs[i] = (char *)kmalloc (sizeof(char) * r_size);
-    	//kargs[i] = (char *)kmalloc(sizeof(char ) * ARG_MAX);
-   	    //bzero(kargs[i], ARG_MAX);    // set \0
     	result = copyinstr((userptr_t)copy[i], kargs[i], r_size, &actual_size);
     	if (result) {
             kprintf("Bad here \n");
@@ -261,16 +249,13 @@ sys_execv(const char * program, char ** args){
     for(int i = args_count - 1; i >= 0; i--){
         if(kargs[i] != NULL){
             kfree(kargs[i]);
-            // kargs[i] = NULL;
         }
     }
     kfree(kargs);
     // copy program
     char progname[PATH_MAX];
-    // char *progname = (char *)kmalloc(sizeof(char ) * NAME_MAX);
     result = copyinstr((userptr_t)program, progname, PATH_MAX, &actual_size);
     if (result) {
-        // kprintf("C");
         return result;
     }
     if(actual_size == 1){
@@ -293,13 +278,11 @@ sys_execv(const char * program, char ** args){
     // switch to it and activate it
     proc_setas(as);
     as_activate();
-    // struct addrspace *old_as = as;
     // load the executable
 
     result = load_elf(v, &entry_point);
     if (result) {
         vfs_close(v);
-	// curthread->p_addrspace = old_as;
         return result;
     }
 
@@ -318,12 +301,9 @@ sys_execv(const char * program, char ** args){
     if (result) {
         return result;
     }
-    // strcpy(curthread->t_name, kstrdup(progname));
 
     kfree(kargs_pad);
     kargs_pad = NULL;
-    // kfree(progname);
-    // progname = NULL;
     /** step 4 enter new process **/
     enter_new_process(args_count, (userptr_t)stackptr, NULL, stackptr, entry_point);
     panic("execv should not return\n");
@@ -347,14 +327,7 @@ sys_sbrk(int amount, vaddr_t * retval){
         kprintf("sbrk bound < 0\n");
         return EINVAL;
     }
-    // if(heap_vbound * PAGE_SIZE + amount > 5 * 1024 * 1024){
-    //     return ENOMEM;
-    // }
-    // if(as->heap_page_used * PAGE_SIZE > 1024 * 1024){//sys.config
-    //     kprintf("heap_page_used: %d\n", as->heap_page_used);
-    //     kprintf("sbrk out of memory\n");
-    //     return ENOMEM;
-    // }
+
     if(amount + heap_vbound * PAGE_SIZE >= USERSTACK - VM_STACKPAGES * PAGE_SIZE){
         kprintf("sbrk bound exceeds stackbase\n");
         return ENOMEM;
@@ -384,14 +357,12 @@ sys_sbrk(int amount, vaddr_t * retval){
                 }
         		kfree(cur);
                 cur = pre->next;
-                // as->heap_page_used--;
             }else{
                 pre = cur;
                 cur = cur->next;
             }
         }
         // head
-        // cur = as->pageTable;
         pre = as->pageTable;
         cur = pre->next;
         wait_page_if_busy(pre->pt_pas / PAGE_SIZE);
@@ -403,7 +374,6 @@ sys_sbrk(int amount, vaddr_t * retval){
             }
             kfree(pre);
             as->pageTable = cur;
-            // as->heap_page_used--;
         }
         as_activate();
 
@@ -412,9 +382,7 @@ sys_sbrk(int amount, vaddr_t * retval){
     	}
     }
     *retval = as->heap_vbase + as->heap_vbound * PAGE_SIZE;
-    // kprintf("retval: %x", as->heap_vbase);
     as->heap_vbound += npages;
-    // kprintf("retval: %x", as->heap_vbase + as->heap_vbound * PAGE_SIZE);
 
     return 0;
 }
