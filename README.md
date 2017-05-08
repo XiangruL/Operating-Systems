@@ -1,15 +1,15 @@
-This *README.md* includes my brief design idea and working sequence that I still remember. I try my best to record all these in case I forget this memorable experience. 
+This *README.md* includes Jihai and Xiangru's brief design ideas for OS161 Assignments. 
 # ASST1: Synchronization  
 
 
 ### Locks
 
-  - Explore and understand relvant code: wchan.h, thread.c, ...
-  - Read existing semaphore implementation
-  - Use KASSERT()
-  - Lock implementation: use blocking lock, *spinlock*, to implement non-blocking lock
-  - Read test file ``` synchtest.c```
-  - Debug: try to use os161-gdb, it's a little different from original gdb. Remember go to *kernel* folder before ``` os161-gdb kernel```, then type ``` target remote unix:.sockets/gdb``` to establish a connection between kernel and debuger
+- Explore and understand relvant code: wchan.h, thread.c, ...
+- Read existing semaphore implementation
+- Use KASSERT()
+- Lock implementation: use blocking lock, *spinlock*, to implement non-blocking lock
+- Read test file ``` synchtest.c```
+- Debug: try to use os161-gdb, it's a little different from original gdb. Remember go to *kernel* folder before ``` os161-gdb kernel```, then type ``` target remote unix:.sockets/gdb``` to establish a connection between kernel and debuger
  
 ### Condition Variables
 
@@ -44,7 +44,7 @@ void consumer() {
 ### Reader-Writer Locks
 
 - Liveness Property: there shouldn't be any starvation for ***write***
-- My implementation (I use CV and lock, but it also can be implemented by spinlock and wchan): 
+- Our implementation (we use CV and lock, but it also can be implemented by spinlock and wchan): 
   - All ***read*** can be executed, in another word can hold rwlock, simultaneously if there is no ***write*** waiting in queue or holding rwlock
   - After a ***write*** request entering lock waiting queue, new ***read*** request should wait(this ensure Liveness Property)
   - An example: some requests come in as this sequence, R1-R2-R3-W1-R4-R5-W2-...
@@ -73,7 +73,7 @@ void consumer() {
 - Figure out where to init your file table and process table, and whether your file table and process table need synchronization primitives (need `fileTable_init` to init console)
 - Think out what methods your syscalls rely on (most of them were implemented and offerd to you,  `proc.h, current.h, vfs.h, vnode.h, uio.h, copyinout.h, types.h, limits.h, stat.h, seek.h, errno.h, fcntl.h and etc` for file syscalls, and all those mentioned before plus `trapframe.h, addrspace.h, vm.h and etc` for proc syscalls.
 - Read os161 syscall's man page again, now you should know clearly what you should write
-- P.S. Kindly remind: mark everything you're not sure in this stage, it will save you lots of time when you debug ASST 3
+- Tips: mark everything you're not sure in this stage, it will save you lots of time when you debug ASST 3
 
 ### File Syscalls
 
@@ -110,7 +110,7 @@ int sys_sbrk(int amount, vaddr_t * retval);
 ```
 
 - sys_getpid: intuitive
-- sys_waitpid/__exit: who should destroy all child's structures, whose lock and cv should parent and child use (in my implementation, child structure can be destroyed by either waitpid or exit func based on whether child exits before parent wait)
+- sys_waitpid/__exit: who should destroy all child's structures, whose lock and cv should parent and child use (in our implementation, child structure can be destroyed by either waitpid or exit func based on whether child exits before parent wait)
 - sys_fork: copy trapframe, copy addrspace, allocate a new proc structrue for child then call `threadfork()`. Since all tests related to fork are hard to debug  and error messages are not so useful, so the first step is convincing yourself there is no error, like NULL pointer usage, in all of your syscall functions.
 - enter_forked_process: refer to `syscall.c`, must do this `tf->tf_epc += 4`, otherwise, child will start at where parent stopped, which is sys_fork. So child will restart to do exactly same thing over and over again. And you should refer to `trap.c` for using `mips_usermode()`
 - sys_execv: the most complicated part from ASST 1, tips from [Jinhao's bolg (it's an archive)](http://web.archive.org/web/20130924003646/http://jhshi.me/2012/03/11/os161-execv-system-call/)
@@ -123,19 +123,52 @@ int sys_sbrk(int amount, vaddr_t * retval);
   - Another not so beautiful solution to avoid `ENOMEM` error: use `strlen(copy[i])` to get length, but this `copy[i]` pointer, comes from first `copyin` step, still point to userspace, so we shouldn't touch it when we write syscall, but it can work without generating an error......
   - After we get all seperate args, we should pad all of them to one single area
 - sys_execv: last three steps in `sys_execv` are similar to `runprogram.c`
+- modify `menu.c`
 
 # ASST3: Virtual Memory
 
 ### Before Writing Code
 
+- Recall knowledge about virtual memory, TLB, page and swapping
+- Figure out difference between `kmalloc` and `malloc`
+- Design coremap data structure: should it map to all memory, will each of its entry need to maintain relevant pid, pte, TLB status?
+- Design page table structure: multi-level array or linked list, which is better? 
+  - Array is fast for searching, but one or two level array will occupy lots of memory. In some tests from ASST3 your kernel only have 512K memory, so after this giant page table initialized, there will be few empty memory and thus lots of swap-in & swap-out will occur later. Those swapping operation will waste much more time than time saved by array searching. So it will let you feel accessing memory is as slow as disk.
+  - If you use list, it's better add an pointer in coremap entry. This only needs `O(1)` for page table searching. And it will also free you from some synchronization dilemma.
+- Design region table structure
+- Read `main.c`. Where should you put your `coremap_init()` function? 
+  - There is a paradox, `kmalloc` needs coremap, and `coremap_init()` needs ram to allocate some pages for it
+  - There are two common ways to do. First is using someway like `ram_steal()` in `coremap_init()`, and calling `coremap_init()` before the very first `kmalloc` usage. Second is using another version of `kmalloc` for all kmalloc before `coremap_init()`
 
 ### Coremap
 
+- Coremap looks like a reverse page table, each entry uses physical page number as its index, and it maps to certain process's page table entry
+- coremap init: We choose put this function right after `ram_bootstrap()`
+- alloc_kpages/ free_kpages: need consider some synchronization situations
+  - Imitate `dumbvm.c` and use spinlock is okay. If you wanna change it to lock or other synchronization primitives, you need pay attention to `t_in_interrupt` status
+- Dumb version of `addrsapce.c` and `vm_fault()` still work well in this stage
 
 ### Pagetables
 
+- as_create/define_stack/difine_region: get called by fork, execv or loadelf
+- as_destroy: free all pages still exist in process's page table and this should hold either coremap lock or page table lock, which depends on your design
+- as_copy: copy every attribute in your addrspace structure, this should also hold a lock since old addrspace may be changed by `swapout` at the same time
+- vm_fault: use many KASSERTs helps a lot, and still need to consider synchronization problems
+- sys_sbrk: notice if heap shrinks, all page on the outside of new heap should be destroyed
 
 ### Swapping
+
+- swap file: bitmap maps each block(4K) of swap file
+- swap out:
+  - LRU/random/other algorithm for choosing a victim page to evict, that needs a timestamp in each coremap entry
+  - Once you get a victim, you need change its status to prevent other thread try to find and evict it
+  - Use this victim coremap entry to find relevant page table entry
+  - Get an available index, swap old page out to swap file and modify old page table entry's status
+  - Add tlbshootdown support, if page is in another cpu's TLB, this cpu should send a interrupt to that cpu and wait until it gets response
+- update:
+    - as_destroy: wait page if it is busy and need unmark bitmap if page is in disk
+    - as_copy: if page is in disk, there are three options, read from block to a new page straightly, read from old block to new block then mark new page is in disk or alloc a new page then swap in and `memmove`
+    - vm_fault: wait if page is busy, allocate a new page and swap in this page
 
 
 

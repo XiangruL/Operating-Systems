@@ -66,12 +66,7 @@ as_create(void)
 	as->regionInfo = NULL;
 	as->heap_vbase = 0;
 	as->heap_vbound = 0;
-	as->as_ptLock = lock_create("as_lock");
-	if(as->as_ptLock == NULL){
-		kfree(as);
-		return NULL;
-	}
-	// as->heap_page_used = 0;
+
 	return as;
 }
 
@@ -120,8 +115,6 @@ as_destroy(struct addrspace *as)
 		riTmp = riTmp->next;
 		kfree(riTmp2);
 	}
-
-	lock_destroy(as->as_ptLock);
 
 	kfree(as);
 

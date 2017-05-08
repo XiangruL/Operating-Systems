@@ -81,9 +81,6 @@ struct addrspace {
         struct regionInfoNode *regionInfo;
         vaddr_t heap_vbase;
         size_t heap_vbound;
-        struct lock * as_ptLock;
-        // size_t heap_page_used;
-        // paddr_t as_stackpbase;
 
         /* Put stuff here for your VM system */
 #endif
