@@ -176,9 +176,8 @@ int sys_sbrk(int amount, vaddr_t * retval);
   1. Process `P1` uses malloc to allocate a new page, but memory is full at this time, so kernel decides to evict one page `page i` from process `P2` and it must mark `page i` as `isbusy` before using `VOP_WRITE` to swap it out. Since `VOP_WRITE` needs semaphore to ensure only one thread can enter this critical section, `P1` must release coremap spinlock before `VOP` operation, then acuqire it after `VOP` finished
   2. Process `P2` acquires coremap spinlock successfully right after `P1` released it, and it uses `as_destroy` to destroy its own addrspace. The first `i-1` pages are `not busy` and are destroyed without waiting, but `P2` finds out that `page_i.isbusy == true`, so it' gonna wait on `page i` and release coremap spinlock 
   3. Process `P3` gets the spinlock and uses malloc to allocate a new page. It also finds out memory is full. And It so happens that kernel decides to evict one page `page j` from process `P2`
-  4. In this version of virtual memory, we set a tmp pointer to target process's page table head, and search target page table entry recursively. But now `P3`'s tmp pointer is `NULL` because `P2`'s page table head is destroyed by itself
-  5. Right after page table entry searching finished, swap-out uses `KASSERT(tmp->pt_pas == PAGE_SIZE * victim)` to ensure that it finds the right page
-  6. In our design, `pt_pas` is second element in page table entry structure, the first is `pt_vas`, and both sizes are 4B. So `tmp(NULL/KVaddr:0x0)->pt_pas` is `0x4`, and since it's a `NULL` pointer, it will assert at this line: `TLB miss, vaddr: 0x4`
+  4. In this version of virtual memory, we set a tmp pointer to target process's page table head, and search target page table entry recursively. But now `P3`'s tmp pointer is `NULL` because `P2`'s page table head is destroyed by itself. And right after page table entry searching finished, swap-out uses `KASSERT(tmp->pt_pas == PAGE_SIZE * victim)` to ensure that it finds the right page
+  5. In our design, `pt_pas` is second element in page table entry structure, the first is `pt_vas`, and both sizes are 4B. So `tmp(NULL/KVaddr:0x0)->pt_pas` is `0x4`, and since it's a `NULL` pointer, it will assert at this line: `TLB miss, vaddr: 0x4`
 - Solution to this error: add relevant page table entry in each coremap entry
 
 
